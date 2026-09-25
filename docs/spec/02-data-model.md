@@ -1,6 +1,6 @@
 # 02. Модель данных
 
-PostgreSQL 16, доступ через Prisma. Все идентификаторы — **UUIDv7** (сортируемые по времени, но непредсказуемые: последовательные ID позволили бы перебрать чужие записи).
+PostgreSQL 16, доступ через Prisma. Все идентификаторы — **UUIDv7** (сортируемые по времени, но непредсказуемые: последовательные ID позволили бы перебрать чужие записи). PostgreSQL 16 не генерирует UUIDv7 нативно, поэтому ID создаются на стороне приложения (пакет `uuidv7`) через Prisma client extension.
 
 ## 1. Общие правила
 
@@ -46,6 +46,8 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
                   │
                   ├──< StaffMember ──> User
                   ├──< Contractor ──< CommercialProposal ──> ProposalComparison
+                  │         └──< Contract ──> Signature
+                  ├──< VerificationSession
                   ├──< Report ──> ReportTemplate
                   ├──< VoiceNote ──< Task
                   ├──< WeeklySummary
@@ -89,6 +91,8 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `payment_mode` | enum | `RECEIPT` \| `KASPI_API` — режим сверки оплат |
 | `kaspi_config` | jsonb | Реквизиты для ссылок и, позже, merchant API |
 | `timezone` | text | По умолчанию `Asia/Almaty` |
+| `cadastral_number` | text | Кадастровый номер здания. Опционально, ускоряет сопоставление с ГБД РН |
+| `address_rka` | text | Регистрационный код адреса (адресный регистр). Опционально, для сопоставления с ГБД РН |
 | `created_at` / `updated_at` | timestamptz | |
 
 `is_voting_ready` — не украшение интерфейса, а предохранитель. Пока он `false`, создание голосования блокируется на уровне сервиса. Причина: голоса по закону считаются пропорционально площади, и голосование с пустыми площадями даст юридически ничтожный протокол.
@@ -122,7 +126,8 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `relation` | enum | `OWNER` \| `TENANT` \| `FAMILY` |
 | `share` | numeric(5,4) | Доля собственности, по умолчанию `1.0000` |
 | `verification_status` | enum | `PENDING` \| `VERIFIED` \| `REJECTED` |
-| `verification_method` | enum | `EDS_REGISTRY_MATCH` \| `MANUAL_CHAIRMAN` |
+| `verification_method` | enum | `PROPERTY_REGISTRY` (ГБД РН) \| `OWNER_REGISTRY_MATCH` (загруженный реестр) \| `MANUAL_CHAIRMAN` |
+| `property_ref` | text | Кадастровый номер помещения из ГБД РН, если найден |
 | `verified_at` | timestamptz | |
 | `verified_by` | uuid | Кто подтвердил, если вручную |
 | `is_voting_representative` | boolean | Кто голосует от помещения при нескольких собственниках |
@@ -133,7 +138,7 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 
 ### `OwnerRegistryEntry` — реестр собственников
 
-Загружается председателем (XLSX/CSV) и служит эталоном для сверки при верификации.
+Загружается председателем (XLSX/CSV). **Запасной источник** для верификации: основной — запрос в ГБД РН через Smart Bridge. Реестр используется, когда ГБД РН недоступна или не вернула помещение в этом доме (например, право ещё не зарегистрировано), а также для массового заполнения площадей.
 
 | Поле | Тип | Описание |
 |---|---|---|
@@ -146,7 +151,7 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `source_file_id` | uuid | FK → `File` |
 | `imported_at` | timestamptz | |
 
-Хранение ИИН в виде HMAC-хеша позволяет сверять личность, не храня сам номер: при верификации мы хешируем ИИН из сертификата ЭЦП тем же ключом и сравниваем. Утечка этой таблицы не раскрывает ИИН жильцов.
+Хранение ИИН в виде HMAC-хеша позволяет сверять личность, не храня сам номер: при верификации мы хешируем ИИН, полученный из Digital ID, тем же ключом и сравниваем. Утечка этой таблицы не раскрывает ИИН жильцов.
 
 ---
 
@@ -163,12 +168,13 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `full_name` | text | |
 | `iin_encrypted` | bytea | AES-256-GCM, ключ в Lockbox |
 | `iin_hash` | bytea | HMAC для сверки без расшифровки |
-| `identity_verified_at` | timestamptz | Когда подтверждена личность через ЭЦП |
+| `identity_verified_at` | timestamptz | Когда подтверждена личность через Digital ID |
 | `avatar_file_id` | uuid | FK → `File` |
 | `locale` | enum | `ru` \| `kk` |
 | `totp_secret_encrypted` | bytea | 2FA. Обязательна для админа, председателя, бухгалтера |
 | `status` | enum | `PENDING` \| `ACTIVE` \| `BLOCKED` |
 | `last_login_at` | timestamptz | |
+| `is_platform_admin` | boolean | По умолчанию `false`. Выставляется только сидом или CLI, через API не меняется |
 
 ИИН хранится в двух формах намеренно: зашифрованный — чтобы показать самому пользователю и вписать в протокол; хешированный — чтобы сверять с реестром и искать без расшифровки. Подробности в [14-compliance-privacy.md](14-compliance-privacy.md#3-шифрование-иин).
 
@@ -187,6 +193,8 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 Роль привязана к дому, а не к пользователю глобально. Один человек может быть председателем в своём доме и обычным жильцом в доме родителей. `PLATFORM_ADMIN` — исключение: он глобальный и хранится в `User.is_platform_admin`.
 
 Уникальность: `(user_id, house_id)` среди активных.
+
+**Роль — служебная, права жильца — из собственности.** Председатель почти всегда сам собственник в своём доме. Одна активная роль на дом этому не мешает: право создавать заявки, видеть свои начисления и голосовать выводится из `UnitOwnership`, а не из `role = RESIDENT`. Роль `RESIDENT` означает «нет служебной роли». Председатель с подтверждённой собственностью голосует как собственник; тайна его бюллетеня защищена так же, как у всех.
 
 ### `Invite` — ссылка-приглашение
 
@@ -221,6 +229,24 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `reviewed_by` / `reviewed_at` | uuid / timestamptz | |
 | `rejection_reason` | text | |
 
+### `VerificationSession` — процедура верификации
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | FK → `User` |
+| `house_id` | uuid | FK → `House`, для какого дома проверяется собственность |
+| `claimed_unit_id` | uuid | Помещение, которое заявил жилец |
+| `identity_provider` | enum | `DIGITAL_ID` \| `MOCK` |
+| `state_hash` | bytea | Хеш одноразового `state` для обмена кодом с провайдером |
+| `status` | enum | `STARTED` \| `IDENTITY_CONFIRMED` \| `PROPERTY_CHECKED` \| `COMPLETED` \| `FAILED` \| `EXPIRED` |
+| `consent_at` | timestamptz | Согласие на запрос сведений о недвижимости |
+| `property_result` | jsonb | Итог сверки: найдено ли помещение в этом доме, кадастровый номер, площадь, доля. **Без ИИН** |
+| `outcome` | enum | `VERIFIED` \| `PENDING_MANUAL` \| `REJECTED` |
+| `expires_at` | timestamptz | 15 минут на прохождение |
+
+Промежуточный ответ провайдеров не хранится: из него сохраняется только результат сверки. Подробности — [04-flows-admin-onboarding.md](04-flows-admin-onboarding.md#7-flow-верификация-личности-и-собственности).
+
 ### `Session`, `OtpCode`, `DeviceToken`
 
 `Session` — выданные refresh-токены: `token_hash`, `family_id` (для обнаружения повторного использования), `device_info`, `ip`, `expires_at`, `revoked_at`.
@@ -228,6 +254,8 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 `OtpCode` — `phone`, `code_hash`, `purpose`, `attempts`, `expires_at`, `consumed_at`. Код хранится хешированным, живёт 5 минут, не более 5 попыток.
 
 `DeviceToken` — `user_id`, `token`, `platform` (`ios`/`android`/`web`), `last_seen_at`.
+
+`DeviceKey` — `user_id`, `public_key`, `platform`, `created_at`, `revoked_at`. Ключ устройства из Secure Enclave / Android Keystore для step-up биометрией: биометрия разблокирует ключ, сервер проверяет подпись одноразового challenge.
 
 ---
 
@@ -240,7 +268,7 @@ Organization ──< House ──< Unit ──< UnitOwnership >── User
 | `id` | uuid | PK |
 | `house_id` | uuid | FK → `House` |
 | `author_id` | uuid | FK → `User` |
-| `number` | int | Порядковый номер в доме, чтобы можно было сослаться: «заявка №14» |
+| `number` | int | Порядковый номер в доме, чтобы можно было сослаться: «заявка №14». Выдаётся из `HouseCounter` |
 | `title` | text | |
 | `description` | text | |
 | `category` | enum | `PLUMBING`, `ELECTRICITY`, `HEATING`, `ELEVATOR`, `CLEANING`, `YARD`, `FACADE`, `ROOF`, `BASEMENT`, `TRASH`, `SECURITY`, `OTHER` |
@@ -372,7 +400,8 @@ RRULE выбран вместо cron, потому что бытовые рас�
 | `threshold` | enum | `SIMPLE_MAJORITY` \| `TWO_THIRDS`. Выводится из `decision_type`, хранится для истории |
 | `quorum_basis` | enum | `BY_AREA` (по умолчанию) \| `BY_UNIT` |
 | `notice_sent_at` | timestamptz | Когда разослано уведомление |
-| `starts_at` / `ends_at` | timestamptz | |
+| `starts_at` / `ends_at` | timestamptz | `ends_at` неизменяем после активации |
+| `extended_until` | timestamptz | Автоматическое продление при недоступности подписания. Только системой, см. [08](08-flows-system.md#810-отказы-внешних-сервисов) |
 | `status` | enum | `DRAFT`, `NOTICE_SENT`, `ACTIVE`, `CLOSED`, `CANCELLED` |
 | `results_visible_during` | boolean | По умолчанию `false` |
 | `snapshot_id` | uuid | FK → `VoteRegistrySnapshot` |
@@ -424,9 +453,11 @@ RRULE выбран вместо cron, потому что бытовые рас�
 | Поле | Тип | Описание |
 |---|---|---|
 | `id` | uuid | PK |
-| `provider` | enum | `SIGEX` |
+| `provider` | enum | `EGOV_SMART_BRIDGE` \| `MOCK` |
 | `external_id` | text | ID процедуры у провайдера |
-| `purpose` | enum | `IDENTITY_VERIFICATION` \| `BALLOT` \| `PROTOCOL` \| `REPORT` |
+| `purpose` | enum | `BALLOT` \| `PROTOCOL` \| `REPORT` \| `CONTRACT` |
+| `signer_type` | enum | `INDIVIDUAL` \| `LEGAL_ENTITY` |
+| `signer_bin` | varchar(12) | БИН, если подписано ключом юрлица |
 | `document_hash` | bytea | SHA-256 подписанного документа |
 | `signature_data` | bytea | CMS/CAdES |
 | `signer_iin_hash` | bytea | ИИН подписанта, хеш |
@@ -507,6 +538,7 @@ RRULE выбран вместо cron, потому что бытовые рас�
 | `period` | varchar(7) | `YYYY-MM`, к какому отчётному периоду относится |
 | `description` | text | Название платежа — требование «добавление категории и названия платежа» |
 | `contractor_id` | uuid | FK → `Contractor` |
+| `contract_id` | uuid | FK → `Contract`, для расходов по договору (строка 6.2.1) |
 | `receipt_id` | uuid | FK → `Receipt` |
 | `attachment_file_ids` | uuid[] | Акты выполненных работ, договоры, дефектные акты |
 | `payment_id` | uuid | FK → `Payment`, если это поступление от жильца |
@@ -606,7 +638,7 @@ RRULE выбран вместо cron, потому что бытовые рас�
 | `bin` | varchar(12) | |
 | `specializations` | enum[] | |
 | `contact_person` / `phone` / `email` | text | |
-| `contract_file_ids` | uuid[] | |
+| `contract_file_ids` | uuid[] | Устарело: договоры ведутся в `Contract`. Для загруженных бумажных договоров |
 | `contract_from` / `contract_to` | date | |
 | `visible_to_residents` | boolean | |
 | `is_active` | boolean | |
@@ -620,6 +652,28 @@ RRULE выбран вместо cron, потому что бытовые рас�
 `ProposalComparison` — `house_id`, `title`, `subject` (что закупаем), `criteria` (jsonb), `ai_analysis` (jsonb: матрица сравнения и обоснование), `recommended_proposal_id`, `decided_proposal_id`, `decided_by`, `vote_id` (если выносилось на голосование).
 
 Связь с голосованием намеренная: крупные расходы требуют решения собрания, и логичный путь — сравнить КП, затем вынести выбор на голосование.
+
+### `Contract` — договор с подрядчиком
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | uuid | PK |
+| `house_id` | uuid | FK → `House` |
+| `contractor_id` | uuid | FK → `Contractor` |
+| `number` | text | Номер договора |
+| `title` / `subject` | text | Предмет договора |
+| `amount` | numeric(14,2) | Сумма, если фиксирована |
+| `valid_from` / `valid_to` | date | |
+| `file_id` | uuid | PDF договора — именно он подписывается |
+| `document_hash` | bytea | SHA-256 PDF. После первой подписи файл неизменяем |
+| `osi_signature_id` | uuid | FK → `Signature`, подпись председателя ключом юрлица ОСИ |
+| `contractor_signature_id` | uuid | FK → `Signature`, подпись подрядчика |
+| `proposal_comparison_id` | uuid | FK → `ProposalComparison`, если договор — итог выбора КП |
+| `vote_id` | uuid | FK → `Vote`, если заключение требовало решения собрания |
+| `status` | enum | `DRAFT` \| `AWAITING_SIGNATURES` \| `SIGNED` \| `TERMINATED` |
+| `signed_at` / `terminated_at` | timestamptz | |
+
+Подрядчик подписывает без учётной записи — по одноразовой ссылке с QR eGov mobile. Подпись принимается, только если БИН из сертификата совпадает с `Contractor.bin`.
 
 ---
 
@@ -747,6 +801,10 @@ RRULE выбран вместо cron, потому что бытовые рас�
 
 **Append-only.** У пользователя БД, под которым работает приложение, есть только `INSERT`. Хеш-цепочка делает незаметную правку истории невозможной: изменение любой записи ломает все последующие хеши. Это стоит почти ничего, а заявленная прозрачность держится именно на этом журнале.
 
+### `HouseCounter`
+
+`house_id`, `kind` (`REQUEST` \| `PROTOCOL` \| `CONTRACT`), `value`. PK `(house_id, kind)`. Номер выдаётся через `UPDATE ... SET value = value + 1 RETURNING value` в той же транзакции, что и вставка записи, — без гонок и пропусков при конкурентном создании.
+
 ### `IdempotencyKey`
 
 `key` (PK), `user_id`, `endpoint`, `request_hash`, `response` (jsonb), `created_at`, `expires_at`.
@@ -771,3 +829,5 @@ RRULE выбран вместо cron, потому что бытовые рас�
 | `AuditLog` | `(house_id, created_at DESC)`, `(entity_type, entity_id)` | Просмотр истории объекта |
 | `LegalChunk` | HNSW по `embedding` | Векторный поиск для юрпомощника |
 | `HouseMembership` | `(user_id, house_id)` UNIQUE WHERE `status='ACTIVE'` | Одна активная роль в доме |
+| `UnitOwnership` | `(unit_id)` UNIQUE WHERE `is_voting_representative` | Один представитель на помещение |
+| `Contract` | `(house_id, status, valid_to)` | Истекающие договоры |

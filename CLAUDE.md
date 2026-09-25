@@ -16,7 +16,8 @@ pnpm workspaces + Turborepo. `apps/api` — NestJS (модульный моно�
 - `AuditLog`, `Ballot`, транзакции — append-only. Финансы не удаляются, только `VOIDED`.
 - ИИН хранится только как `iin_encrypted` (AES-256-GCM) + `iin_hash` (HMAC-SHA256). В логах и ИИ — никогда.
 - В ИИ-провайдер уходит только обезличенный текст. Система работает при выключенном ИИ.
-- Интеграции — только через интерфейсы: `SignatureProvider`, `PaymentProvider`, `AiProvider`, `PushProvider`.
+- Интеграции — только через интерфейсы: `SignatureProvider`, `IdentityProvider`, `PropertyRegistryProvider` (все три — Smart Bridge), `PaymentProvider`, `AiProvider`, `PushProvider`. На этапе разработки — mock-реализации; реальная включается конфигурацией.
+- Результат подписи и верификации сервер получает у провайдера сам; утверждениям клиента не доверяем. ИИН из сертификата ЭЦП = ИИН из Digital ID.
 - Токены в вебе — httpOnly cookie. `localStorage` для токенов запрещён.
 - Все строки UI — через i18n (`ru`, `kk`).
 - Миграции — expand/contract, обратимые.
