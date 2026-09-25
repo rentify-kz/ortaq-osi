@@ -1,0 +1,50 @@
+{
+  "name": "@ortaq/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --env-file-if-exists=.env --watch-path=dist --enable-source-maps dist/main.js",
+    "start": "node --enable-source-maps dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "node --env-file-if-exists=.env dist/cli/seed.js",
+    "db:verify-reversible": "node --env-file-if-exists=.env scripts/verify-migrations-reversible.mjs",
+    "admin:create": "node --env-file-if-exists=.env dist/cli/create-admin.js",
+    "postinstall": "prisma generate || true"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.16.2",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.4",
+    "@types/nodemailer": "^7.0.12",
+    "@types/supertest": "^7.2.1",
+    "prisma": "~6.19.3",
+    "supertest": "^7.3.0",
+    "unplugin-swc": "^1.6.0",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.6",
+    "@nestjs/core": "^11.2.6",
+    "@nestjs/platform-express": "^11.2.6",
+    "@ortaq/shared": "workspace:*",
+    "@prisma/client": "~6.19.3",
+    "argon2": "^0.45.1",
+    "cookie-parser": "^1.4.7",
+    "helmet": "^8.3.0",
+    "jose": "^6.2.12",
+    "nodemailer": "^7.0.13",
+    "otplib": "^12.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "uuidv7": "^1.2.1",
+    "zod": "^3.25.76"
+  }
+}
