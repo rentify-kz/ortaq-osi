@@ -17,7 +17,8 @@ export function planUnits(
   house: { entrance_count: number; unit_count: number; floor_count?: number | null },
   layout?: EntranceLayout[],
 ): LayoutResult {
-  const entrances = layout ?? evenLayout(house.entrance_count, house.unit_count, house.floor_count ?? undefined);
+  const entrances =
+    layout ?? evenLayout(house.entrance_count, house.unit_count, house.floor_count ?? undefined);
   const problem = validate(entrances);
   if (problem) return { ok: false, reason: problem };
 

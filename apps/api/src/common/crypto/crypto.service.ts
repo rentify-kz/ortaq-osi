@@ -1,5 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from '../../config/config.js';
 
 /**

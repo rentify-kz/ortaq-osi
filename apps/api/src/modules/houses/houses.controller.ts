@@ -24,13 +24,22 @@ export class HousesController {
       select: { role: true, house: { select: { id: true, display_name: true, address: true } } },
       orderBy: { created_at: 'asc' },
     });
-    return rows.map((m) => ({ id: m.house.id, display_name: m.house.display_name, address: m.house.address, role: m.role }));
+    return rows.map((m) => ({
+      id: m.house.id,
+      display_name: m.house.display_name,
+      address: m.house.address,
+      role: m.role,
+    }));
   }
 
   @Get(':houseId')
   @HouseScoped()
   async house(@CurrentHouse() scope: HouseScope): Promise<HouseDetails> {
-    const h = await this.db.tx.house.findUnique({ where: { id: scope.houseId } });
+    const [h, areasTotal, areasFilled] = await Promise.all([
+      this.db.tx.house.findUnique({ where: { id: scope.houseId } }),
+      this.db.tx.unit.count({ where: { is_excluded_from_voting: false } }),
+      this.db.tx.unit.count({ where: { is_excluded_from_voting: false, area: { not: null } } }),
+    ]);
     if (!h) throw AppError.notFound();
     return {
       id: h.id,
@@ -40,6 +49,9 @@ export class HousesController {
       unit_count: h.unit_count,
       floor_count: h.floor_count,
       is_voting_ready: h.is_voting_ready,
+      areas_filled: areasFilled,
+      areas_total: areasTotal,
+      registry_uploaded: h.registry_uploaded_at !== null,
       my_role: scope.role,
     };
   }

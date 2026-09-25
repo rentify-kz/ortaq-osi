@@ -17,6 +17,10 @@ export const HouseDetails = z.object({
   unit_count: z.number().int(),
   floor_count: z.number().int().nullable(),
   is_voting_ready: z.boolean(),
+  /** Для чек-листа подготовки дома (04 §4). */
+  areas_filled: z.number().int(),
+  areas_total: z.number().int(),
+  registry_uploaded: z.boolean(),
   my_role: HouseRole,
 });
 export type HouseDetails = z.infer<typeof HouseDetails>;

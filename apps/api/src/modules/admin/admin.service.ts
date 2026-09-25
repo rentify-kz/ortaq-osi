@@ -34,11 +34,17 @@ export class AdminService {
 
   // ---------- Организации ----------
 
-  async listOrganizations(q: { cursor?: string; limit: number; search?: string }): Promise<Page<Organization>> {
+  async listOrganizations(q: {
+    cursor?: string;
+    limit: number;
+    search?: string;
+  }): Promise<Page<Organization>> {
     const rows = await this.db.tx.organization.findMany({
       where: {
         ...(q.cursor ? { id: { lt: q.cursor } } : {}),
-        ...(q.search ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { bin: { startsWith: q.search } }] } : {}),
+        ...(q.search
+          ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { bin: { startsWith: q.search } }] }
+          : {}),
       },
       include: { _count: { select: { houses: true } } },
       orderBy: { id: 'desc' },
@@ -53,10 +59,17 @@ export class AdminService {
         data: { ...input, bank_details: input.bank_details ?? Prisma.DbNull },
         include: { _count: { select: { houses: true } } },
       });
-      await this.audit.record({ action: 'organization.create', entity_type: 'organization', entity_id: org.id, house_id: null, after: { name: org.name, bin: org.bin } });
+      await this.audit.record({
+        action: 'organization.create',
+        entity_type: 'organization',
+        entity_id: org.id,
+        house_id: null,
+        after: { name: org.name, bin: org.bin },
+      });
       return toOrganization(org);
     } catch (e) {
-      if (isUniqueViolation(e)) throw AppError.conflict(ErrorCode.ORGANIZATION_BIN_TAKEN, 'Организация с таким БИН уже заведена');
+      if (isUniqueViolation(e))
+        throw AppError.conflict(ErrorCode.ORGANIZATION_BIN_TAKEN, 'Организация с таким БИН уже заведена');
       throw e;
     }
   }
@@ -80,20 +93,31 @@ export class AdminService {
       });
       return toOrganization(org);
     } catch (e) {
-      if (isUniqueViolation(e)) throw AppError.conflict(ErrorCode.ORGANIZATION_BIN_TAKEN, 'Организация с таким БИН уже заведена');
+      if (isUniqueViolation(e))
+        throw AppError.conflict(ErrorCode.ORGANIZATION_BIN_TAKEN, 'Организация с таким БИН уже заведена');
       throw e;
     }
   }
 
   // ---------- Дома ----------
 
-  async listHouses(q: { cursor?: string; limit: number; organization_id?: string; search?: string }): Promise<Page<House>> {
+  async listHouses(q: {
+    cursor?: string;
+    limit: number;
+    organization_id?: string;
+    search?: string;
+  }): Promise<Page<House>> {
     const rows = await this.db.tx.house.findMany({
       where: {
         ...(q.cursor ? { id: { lt: q.cursor } } : {}),
         ...(q.organization_id ? { organization_id: q.organization_id } : {}),
         ...(q.search
-          ? { OR: [{ display_name: { contains: q.search, mode: 'insensitive' } }, { address: { contains: q.search, mode: 'insensitive' } }] }
+          ? {
+              OR: [
+                { display_name: { contains: q.search, mode: 'insensitive' } },
+                { address: { contains: q.search, mode: 'insensitive' } },
+              ],
+            }
           : {}),
       },
       include: { organization: { select: { name: true } } },
@@ -104,27 +128,40 @@ export class AdminService {
   }
 
   async getHouse(id: string): Promise<House> {
-    const house = await this.db.tx.house.findUnique({ where: { id }, include: { organization: { select: { name: true } } } });
+    const house = await this.db.tx.house.findUnique({
+      where: { id },
+      include: { organization: { select: { name: true } } },
+    });
     if (!house) throw AppError.notFound();
     return toHouse(house);
   }
 
   /** Создание дома сразу генерирует помещения: без них председателю нечего настраивать. */
   async createHouse(input: CreateHouseRequest): Promise<House> {
-    const org = await this.db.tx.organization.findUnique({ where: { id: input.organization_id }, select: { id: true } });
+    const org = await this.db.tx.organization.findUnique({
+      where: { id: input.organization_id },
+      select: { id: true },
+    });
     if (!org) throw AppError.notFound('Организация не найдена');
 
     const plan = planUnits(input);
     if (!plan.ok) throw AppError.unprocessable(ErrorCode.UNIT_LAYOUT_INVALID, plan.reason);
 
-    const house = await this.db.tx.house.create({ data: input, include: { organization: { select: { name: true } } } });
+    const house = await this.db.tx.house.create({
+      data: input,
+      include: { organization: { select: { name: true } } },
+    });
     await this.insertUnits(this.db.tx, house.id, plan.units, 'APARTMENT');
     await this.audit.record({
       action: 'house.create',
       entity_type: 'house',
       entity_id: house.id,
       house_id: house.id,
-      after: { organization_id: house.organization_id, display_name: house.display_name, unit_count: house.unit_count },
+      after: {
+        organization_id: house.organization_id,
+        display_name: house.display_name,
+        unit_count: house.unit_count,
+      },
     });
     return this.getHouse(house.id);
   }
@@ -133,7 +170,10 @@ export class AdminService {
     const before = await this.db.tx.house.findUnique({ where: { id } });
     if (!before) throw AppError.notFound();
     if (input.organization_id && input.organization_id !== before.organization_id) {
-      const org = await this.db.tx.organization.findUnique({ where: { id: input.organization_id }, select: { id: true } });
+      const org = await this.db.tx.organization.findUnique({
+        where: { id: input.organization_id },
+        select: { id: true },
+      });
       if (!org) throw AppError.notFound('Организация не найдена');
     }
     await this.db.tx.house.update({ where: { id }, data: input });
@@ -153,14 +193,22 @@ export class AdminService {
    * Перегенерация помещений. Запрещена, если председатель уже ввёл площади: перегенерация их сотрёт.
    * TODO(фазы 1, 3, 4): также запрещать при наличии собственников, начислений и голосований.
    */
-  async regenerateUnits(id: string, layout: EntranceLayout[] | undefined, unitType: UnitType): Promise<House> {
+  async regenerateUnits(
+    id: string,
+    layout: EntranceLayout[] | undefined,
+    unitType: UnitType,
+  ): Promise<House> {
     const house = await this.db.tx.house.findUnique({ where: { id } });
     if (!house) throw AppError.notFound();
     const filled = await this.db.tx.unit.count({ where: { house_id: id, area: { not: null } } });
     if (filled > 0) {
-      throw AppError.conflict(ErrorCode.UNITS_LOCKED, 'У помещений уже заполнены площади — перегенерация их сотрёт', {
-        units_with_area: filled,
-      });
+      throw AppError.conflict(
+        ErrorCode.UNITS_LOCKED,
+        'У помещений уже заполнены площади — перегенерация их сотрёт',
+        {
+          units_with_area: filled,
+        },
+      );
     }
     const plan = planUnits(house, layout);
     if (!plan.ok) throw AppError.unprocessable(ErrorCode.UNIT_LAYOUT_INVALID, plan.reason);
@@ -168,7 +216,10 @@ export class AdminService {
     await this.db.tx.unit.deleteMany({ where: { house_id: id } });
     await this.insertUnits(this.db.tx, id, plan.units, unitType);
     const entrances = new Set(plan.units.map((u) => u.entrance)).size;
-    await this.db.tx.house.update({ where: { id }, data: { unit_count: plan.units.length, entrance_count: entrances } });
+    await this.db.tx.house.update({
+      where: { id },
+      data: { unit_count: plan.units.length, entrance_count: entrances },
+    });
     await this.audit.record({
       action: 'house.units.regenerate',
       entity_type: 'house',
@@ -199,10 +250,12 @@ export class AdminService {
     if (!house) throw AppError.notFound();
     const [areasTotal, areasFilled, chairman] = await Promise.all([
       this.db.tx.unit.count({ where: { house_id: houseId, is_excluded_from_voting: false } }),
-      this.db.tx.unit.count({ where: { house_id: houseId, is_excluded_from_voting: false, area: { not: null } } }),
+      this.db.tx.unit.count({
+        where: { house_id: houseId, is_excluded_from_voting: false, area: { not: null } },
+      }),
       this.db.tx.houseMembership.findFirst({
         where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' },
-        select: { user: { select: { status: true } } },
+        select: { user: { select: { id: true, status: true, full_name: true, email: true } } },
       }),
     ]);
 
@@ -223,12 +276,32 @@ export class AdminService {
       // Верификация жильцов появится в фазе 1.
       residents_verified: 0,
       blocking_issues: issues,
+      chairman: chairman
+        ? {
+            user_id: chairman.user.id,
+            full_name: chairman.user.full_name,
+            email: chairman.user.email,
+            activated: chairman.user.status === 'ACTIVE',
+          }
+        : null,
     };
   }
 
-  private async insertUnits(tx: Tx, houseId: string, units: { number: string; entrance: number; floor: number | null }[], type: UnitType) {
+  private async insertUnits(
+    tx: Tx,
+    houseId: string,
+    units: { number: string; entrance: number; floor: number | null }[],
+    type: UnitType,
+  ) {
     // Монотонный генератор UUIDv7: порядок id совпадает с порядком нумерации, на нём строится курсор.
-    const rows = units.map((u) => ({ id: uuidv7(), house_id: houseId, number: u.number, entrance: u.entrance, floor: u.floor, type }));
+    const rows = units.map((u) => ({
+      id: uuidv7(),
+      house_id: houseId,
+      number: u.number,
+      entrance: u.entrance,
+      floor: u.floor,
+      type,
+    }));
     for (let i = 0; i < rows.length; i += 500) {
       await tx.unit.createMany({ data: rows.slice(i, i + 500) });
     }

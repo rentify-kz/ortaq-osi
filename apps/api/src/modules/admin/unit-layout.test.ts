@@ -36,7 +36,17 @@ describe('planUnits', () => {
   });
 
   it('rejects overlapping ranges and duplicate entrances', () => {
-    expect(planUnits({ entrance_count: 2, unit_count: 0 }, [{ entrance: 1, from: 1, to: 10 }, { entrance: 2, from: 10, to: 20 }]).ok).toBe(false);
-    expect(planUnits({ entrance_count: 2, unit_count: 0 }, [{ entrance: 1, from: 1, to: 2 }, { entrance: 1, from: 3, to: 4 }]).ok).toBe(false);
+    expect(
+      planUnits({ entrance_count: 2, unit_count: 0 }, [
+        { entrance: 1, from: 1, to: 10 },
+        { entrance: 2, from: 10, to: 20 },
+      ]).ok,
+    ).toBe(false);
+    expect(
+      planUnits({ entrance_count: 2, unit_count: 0 }, [
+        { entrance: 1, from: 1, to: 2 },
+        { entrance: 1, from: 3, to: 4 },
+      ]).ok,
+    ).toBe(false);
   });
 });

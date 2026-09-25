@@ -19,7 +19,8 @@ export class RequestTxInterceptor implements NestInterceptor {
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
-    const meta = <T>(key: string) => this.reflector.getAllAndOverride<T>(key, [ctx.getHandler(), ctx.getClass()]);
+    const meta = <T>(key: string) =>
+      this.reflector.getAllAndOverride<T>(key, [ctx.getHandler(), ctx.getClass()]);
     const store: RequestContext = {
       actor: req.actor,
       house: req.house,

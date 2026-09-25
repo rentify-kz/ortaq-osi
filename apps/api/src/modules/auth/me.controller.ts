@@ -49,9 +49,18 @@ export class MeController {
   }
 
   @Patch()
-  async patch(@CurrentActor() actor: Actor, @Body(new ZodPipe(PatchMeRequest)) body: PatchMeRequest): Promise<MeResponse> {
+  async patch(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(PatchMeRequest)) body: PatchMeRequest,
+  ): Promise<MeResponse> {
     await this.db.tx.user.update({ where: { id: actor.userId }, data: body });
-    await this.audit.record({ action: 'user.update_self', entity_type: 'user', entity_id: actor.userId, house_id: null, after: { locale: body.locale } });
+    await this.audit.record({
+      action: 'user.update_self',
+      entity_type: 'user',
+      entity_id: actor.userId,
+      house_id: null,
+      after: { locale: body.locale },
+    });
     return this.me(actor);
   }
 }

@@ -44,7 +44,10 @@ export class MockPropertyRegistryProvider implements PropertyRegistryProvider {
 const MOCK_SIGNING_KEY = 'ortaq-mock-signature';
 
 export class MockSignatureProvider implements SignatureProvider {
-  private readonly ops = new Map<string, { document: Uint8Array; signer?: { iin?: string; bin?: string; fullName: string }; rejected?: boolean }>();
+  private readonly ops = new Map<
+    string,
+    { document: Uint8Array; signer?: { iin?: string; bin?: string; fullName: string }; rejected?: boolean }
+  >();
 
   async startSigning({ document }: { document: Uint8Array }): Promise<SigningOperation> {
     const operationId = randomUUID();
@@ -81,11 +84,17 @@ export class MockSignatureProvider implements SignatureProvider {
 
   async verify({ cms, document }: { cms: Uint8Array; document: Uint8Array }): Promise<SignatureVerification> {
     try {
-      const { payload, mac } = JSON.parse(Buffer.from(cms).toString('utf8')) as { payload: string; mac: string };
+      const { payload, mac } = JSON.parse(Buffer.from(cms).toString('utf8')) as {
+        payload: string;
+        mac: string;
+      };
       if (createHmac('sha256', MOCK_SIGNING_KEY).update(payload).digest('hex') !== mac) {
         return { valid: false, reason: 'bad signature' };
       }
-      const { signer, hash } = JSON.parse(payload) as { signer: { iin?: string; bin?: string; fullName: string }; hash: string };
+      const { signer, hash } = JSON.parse(payload) as {
+        signer: { iin?: string; bin?: string; fullName: string };
+        hash: string;
+      };
       if (hash !== sha256hex(document)) return { valid: false, reason: 'document mismatch' };
       const now = new Date();
       return {

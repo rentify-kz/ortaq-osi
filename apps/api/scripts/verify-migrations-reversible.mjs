@@ -10,7 +10,10 @@ const url = process.env.DATABASE_MIGRATOR_URL;
 if (!url) throw new Error('DATABASE_MIGRATOR_URL is required');
 
 const dir = join(root, 'prisma', 'migrations');
-const migrations = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+const migrations = readdirSync(dir, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name)
+  .sort();
 const last = migrations.at(-1);
 if (!last) throw new Error('no migrations');
 const down = join(dir, last, 'down.sql');

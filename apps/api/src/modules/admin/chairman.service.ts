@@ -20,23 +20,39 @@ export class ChairmanService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async assign(houseId: string, input: AssignChairmanRequest, actorId: string): Promise<{ user_id: string; invite_sent: boolean }> {
+  async assign(
+    houseId: string,
+    input: AssignChairmanRequest,
+    actorId: string,
+  ): Promise<{ user_id: string; invite_sent: boolean }> {
     const tx = this.db.tx;
-    const house = await tx.house.findUnique({ where: { id: houseId }, select: { id: true, display_name: true } });
+    const house = await tx.house.findUnique({
+      where: { id: houseId },
+      select: { id: true, display_name: true },
+    });
     if (!house) throw AppError.notFound();
 
-    const current = await tx.houseMembership.findFirst({ where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' } });
+    const current = await tx.houseMembership.findFirst({
+      where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' },
+    });
     if (current) {
-      throw AppError.conflict(ErrorCode.CHAIRMAN_ALREADY_ASSIGNED, 'У дома уже есть председатель. Сначала отзовите его доступ');
+      throw AppError.conflict(
+        ErrorCode.CHAIRMAN_ALREADY_ASSIGNED,
+        'У дома уже есть председатель. Сначала отзовите его доступ',
+      );
     }
 
     const user =
-      (await tx.user.findUnique({ where: { email: input.email }, select: { id: true, status: true, password_hash: true } })) ??
+      (await tx.user.findUnique({
+        where: { email: input.email },
+        select: { id: true, status: true, password_hash: true },
+      })) ??
       (await tx.user.create({
         data: { email: input.email, full_name: input.full_name, status: 'PENDING' },
         select: { id: true, status: true, password_hash: true },
       }));
-    if (user.status === 'BLOCKED') throw AppError.unprocessable(ErrorCode.CONFLICT, 'Учётная запись заблокирована');
+    if (user.status === 'BLOCKED')
+      throw AppError.unprocessable(ErrorCode.CONFLICT, 'Учётная запись заблокирована');
 
     // У пользователя может быть другая роль в этом доме (например, жилец) — председательство её заменяет.
     await tx.houseMembership.updateMany({
@@ -44,7 +60,13 @@ export class ChairmanService {
       data: { status: 'REVOKED', revoked_at: new Date() },
     });
     const membership = await tx.houseMembership.create({
-      data: { house_id: houseId, user_id: user.id, role: 'CHAIRMAN', joined_via: 'ADMIN_PROVISION', created_by: actorId },
+      data: {
+        house_id: houseId,
+        user_id: user.id,
+        role: 'CHAIRMAN',
+        joined_via: 'ADMIN_PROVISION',
+        created_by: actorId,
+      },
     });
     await this.audit.record({
       action: 'membership.chairman.assign',
@@ -72,20 +94,34 @@ export class ChairmanService {
     const tx = this.db.tx;
     const m = await tx.houseMembership.findFirst({
       where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' },
-      select: { user: { select: { id: true, email: true, password_hash: true } }, house: { select: { display_name: true } } },
+      select: {
+        user: { select: { id: true, email: true, password_hash: true } },
+        house: { select: { display_name: true } },
+      },
     });
     if (!m?.user.email) throw AppError.notFound('Председатель не назначен');
-    if (m.user.password_hash) throw AppError.conflict(ErrorCode.CONFLICT, 'Председатель уже установил пароль');
+    if (m.user.password_hash)
+      throw AppError.conflict(ErrorCode.CONFLICT, 'Председатель уже установил пароль');
     await this.sendPasswordSetLink(m.user.id, m.user.email, m.house.display_name);
-    await this.audit.record({ action: 'membership.chairman.resend_invite', entity_type: 'user', entity_id: m.user.id, house_id: houseId });
+    await this.audit.record({
+      action: 'membership.chairman.resend_invite',
+      entity_type: 'user',
+      entity_id: m.user.id,
+      house_id: houseId,
+    });
   }
 
   /** Отзыв председателя (переизбрание). Сессии не трогаем: у человека могут быть другие дома. */
   async revoke(houseId: string): Promise<void> {
     const tx = this.db.tx;
-    const m = await tx.houseMembership.findFirst({ where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' } });
+    const m = await tx.houseMembership.findFirst({
+      where: { house_id: houseId, role: 'CHAIRMAN', status: 'ACTIVE' },
+    });
     if (!m) throw AppError.notFound('Председатель не назначен');
-    await tx.houseMembership.update({ where: { id: m.id }, data: { status: 'REVOKED', revoked_at: new Date() } });
+    await tx.houseMembership.update({
+      where: { id: m.id },
+      data: { status: 'REVOKED', revoked_at: new Date() },
+    });
     await this.audit.record({
       action: 'membership.chairman.revoke',
       entity_type: 'house_membership',

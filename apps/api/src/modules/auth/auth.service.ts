@@ -45,7 +45,13 @@ export class AuthService {
     });
     const ok = await this.passwords.verify(user?.password_hash, password);
     if (!user || !ok || user.status === 'BLOCKED') {
-      await this.audit.record({ action: 'auth.login.failed', entity_type: 'user', entity_id: user?.id, house_id: null, actor_id: user?.id ?? null });
+      await this.audit.record({
+        action: 'auth.login.failed',
+        entity_type: 'user',
+        entity_id: user?.id,
+        house_id: null,
+        actor_id: user?.id ?? null,
+      });
       throw INVALID_CREDENTIALS();
     }
     const purpose = user.totp_enabled_at ? 'VERIFY' : 'SETUP';
@@ -82,7 +88,13 @@ export class AuthService {
     if (!used) throw INVALID_TOKEN();
 
     await this.sessions.revokeAllForUser(record.user.id);
-    await this.audit.record({ action: 'auth.password.set', entity_type: 'user', entity_id: record.user.id, house_id: null, actor_id: record.user.id });
+    await this.audit.record({
+      action: 'auth.password.set',
+      entity_type: 'user',
+      entity_id: record.user.id,
+      house_id: null,
+      actor_id: record.user.id,
+    });
 
     const purpose = record.user.totp_enabled_at ? 'VERIFY' : 'SETUP';
     return {
@@ -112,19 +124,40 @@ export class AuthService {
     return { secret, otpauth_url: this.totp.otpauthUrl(user.email ?? user.id, secret) };
   }
 
-  async verifyTotp(challengeToken: string, code: string, meta: Omit<ClientMeta, 'client'>): Promise<IssuedSession & { client: SessionClient }> {
+  async verifyTotp(
+    challengeToken: string,
+    code: string,
+    meta: Omit<ClientMeta, 'client'>,
+  ): Promise<IssuedSession & { client: SessionClient }> {
     const challenge = await this.tokens.verifyChallenge(challengeToken);
     if (!challenge) throw INVALID_TOKEN();
     const user = await this.db.rw.user.findUnique({
       where: { id: challenge.sub },
-      select: { id: true, status: true, is_platform_admin: true, totp_secret_encrypted: true, totp_enabled_at: true, totp_last_step: true },
+      select: {
+        id: true,
+        status: true,
+        is_platform_admin: true,
+        totp_secret_encrypted: true,
+        totp_enabled_at: true,
+        totp_last_step: true,
+      },
     });
     if (!user || user.status === 'BLOCKED' || !user.totp_secret_encrypted) throw INVALID_TOKEN();
     if (challenge.purpose === 'VERIFY' && !user.totp_enabled_at) throw INVALID_TOKEN();
 
-    const step = this.totp.verify(code, this.crypto.decryptTotpSecret(user.totp_secret_encrypted), user.totp_last_step);
+    const step = this.totp.verify(
+      code,
+      this.crypto.decryptTotpSecret(user.totp_secret_encrypted),
+      user.totp_last_step,
+    );
     if (step === null) {
-      await this.audit.record({ action: 'auth.totp.failed', entity_type: 'user', entity_id: user.id, house_id: null, actor_id: user.id });
+      await this.audit.record({
+        action: 'auth.totp.failed',
+        entity_type: 'user',
+        entity_id: user.id,
+        house_id: null,
+        actor_id: user.id,
+      });
       throw INVALID_TOTP();
     }
 
@@ -140,7 +173,13 @@ export class AuthService {
     if (count === 0) throw INVALID_TOTP();
 
     if (challenge.purpose === 'SETUP') {
-      await this.audit.record({ action: 'auth.totp.enabled', entity_type: 'user', entity_id: user.id, house_id: null, actor_id: user.id });
+      await this.audit.record({
+        action: 'auth.totp.enabled',
+        entity_type: 'user',
+        entity_id: user.id,
+        house_id: null,
+        actor_id: user.id,
+      });
     }
     const session = await this.sessions.create({
       userId: user.id,
@@ -149,7 +188,13 @@ export class AuthService {
       ip: meta.ip,
       deviceInfo: meta.deviceInfo,
     });
-    await this.audit.record({ action: 'auth.login.success', entity_type: 'session', entity_id: session.sessionId, house_id: null, actor_id: user.id });
+    await this.audit.record({
+      action: 'auth.login.success',
+      entity_type: 'session',
+      entity_id: session.sessionId,
+      house_id: null,
+      actor_id: user.id,
+    });
     return { ...session, client: challenge.cli };
   }
 
@@ -160,7 +205,11 @@ export class AuthService {
       select: { totp_secret_encrypted: true, totp_enabled_at: true, totp_last_step: true },
     });
     if (!user?.totp_enabled_at || !user.totp_secret_encrypted) throw INVALID_TOTP();
-    const step = this.totp.verify(code, this.crypto.decryptTotpSecret(user.totp_secret_encrypted), user.totp_last_step);
+    const step = this.totp.verify(
+      code,
+      this.crypto.decryptTotpSecret(user.totp_secret_encrypted),
+      user.totp_last_step,
+    );
     const { count } =
       step === null
         ? { count: 0 }
@@ -169,10 +218,20 @@ export class AuthService {
             data: { totp_last_step: step },
           });
     if (count === 0) {
-      await this.audit.record({ action: 'auth.step_up.failed', entity_type: 'session', entity_id: actor.sessionId, house_id: null });
+      await this.audit.record({
+        action: 'auth.step_up.failed',
+        entity_type: 'session',
+        entity_id: actor.sessionId,
+        house_id: null,
+      });
       throw INVALID_TOTP();
     }
-    await this.audit.record({ action: 'auth.step_up', entity_type: 'session', entity_id: actor.sessionId, house_id: null });
+    await this.audit.record({
+      action: 'auth.step_up',
+      entity_type: 'session',
+      entity_id: actor.sessionId,
+      house_id: null,
+    });
     return {
       token: await this.tokens.signStepUp({ sub: actor.userId, sid: actor.sessionId }),
       expiresAt: new Date(Date.now() + STEP_UP_TTL_SEC * 1000),
@@ -181,6 +240,11 @@ export class AuthService {
 
   async logout(actor: Actor): Promise<void> {
     await this.sessions.revoke(actor.sessionId);
-    await this.audit.record({ action: 'auth.logout', entity_type: 'session', entity_id: actor.sessionId, house_id: null });
+    await this.audit.record({
+      action: 'auth.logout',
+      entity_type: 'session',
+      entity_id: actor.sessionId,
+      house_id: null,
+    });
   }
 }

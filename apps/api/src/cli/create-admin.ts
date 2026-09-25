@@ -32,7 +32,8 @@ try {
     data: { action: 'user.platform_admin.grant', entity_type: 'user', entity_id: user.id, actor_role: 'CLI' },
   });
   console.log(`Админ платформы: ${email} (${user.id})`);
-  if (!user.password_hash) console.log(`Ссылка установки пароля: ${config.PUBLIC_WEB_URL}/set-password?token=${token}`);
+  if (!user.password_hash)
+    console.log(`Ссылка установки пароля: ${config.PUBLIC_WEB_URL}/set-password?token=${token}`);
 } finally {
   await db.$disconnect();
 }

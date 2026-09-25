@@ -5,7 +5,16 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DbService } from '../src/infra/db/db.service.js';
-import { type HouseFixture, type TestApp, type WebSession, createChairman, createHouse, createTestApp, createUser, loginWeb } from './helpers.js';
+import {
+  type HouseFixture,
+  type TestApp,
+  type WebSession,
+  createChairman,
+  createHouse,
+  createTestApp,
+  createUser,
+  loginWeb,
+} from './helpers.js';
 
 /** Все GET-эндпоинты вида /houses/:houseId/... */
 const HOUSE_SCOPED_GETS = ['/v1/houses/:houseId', '/v1/houses/:houseId/units'];
@@ -64,10 +73,15 @@ describe('house list and units', () => {
 
   it('a revoked membership loses access immediately', async () => {
     const acc = await createUser(t);
-    const m = await t.db.houseMembership.create({ data: { house_id: a.houseId, user_id: acc.id, role: 'ACCOUNTANT', joined_via: 'CHAIRMAN_ADD' } });
+    const m = await t.db.houseMembership.create({
+      data: { house_id: a.houseId, user_id: acc.id, role: 'ACCOUNTANT', joined_via: 'CHAIRMAN_ADD' },
+    });
     const s = await loginWeb(t, acc);
     await s.agent.get(`/v1/houses/${a.houseId}/units`).expect(200);
-    await t.db.houseMembership.update({ where: { id: m.id }, data: { status: 'REVOKED', revoked_at: new Date() } });
+    await t.db.houseMembership.update({
+      where: { id: m.id },
+      data: { status: 'REVOKED', revoked_at: new Date() },
+    });
     await s.agent.get(`/v1/houses/${a.houseId}/units`).expect(404);
   });
 });
@@ -93,7 +107,9 @@ describe('row level security (database layer)', () => {
   it('cannot insert a row into another house', async () => {
     const db = t.app.get(DbService);
     await expect(
-      db.scoped({ houseId: a.houseId }, (tx) => tx.unit.create({ data: { house_id: b.houseId, number: 'X-1' } })),
+      db.scoped({ houseId: a.houseId }, (tx) =>
+        tx.unit.create({ data: { house_id: b.houseId, number: 'X-1' } }),
+      ),
     ).rejects.toThrow();
   });
 

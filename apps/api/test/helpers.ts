@@ -74,7 +74,10 @@ export interface UserFixture {
 }
 
 /** Активный пользователь с паролем и TOTP, созданный напрямую в БД. */
-export async function createUser(t: TestApp, opts: { admin?: boolean; name?: string } = {}): Promise<UserFixture> {
+export async function createUser(
+  t: TestApp,
+  opts: { admin?: boolean; name?: string } = {},
+): Promise<UserFixture> {
   const email = `${unique(opts.admin ? 'admin' : 'user')}@test.local`;
   const totpSecret = authenticator.generateSecret(20);
   const user = await t.db.user.create({
@@ -101,16 +104,36 @@ export interface WebSession {
 /** Полный вход веб-клиентом: пароль → TOTP → cookie; затем step-up кодом следующего шага. */
 export async function loginWeb(t: TestApp, user: UserFixture): Promise<WebSession> {
   const agent = request.agent(t.app.getHttpServer());
-  const login = await agent.post('/v1/auth/password/login').send({ email: user.email, password: PASSWORD }).expect(200);
-  await agent.post('/v1/auth/2fa/verify').send({ challenge_token: login.body.challenge_token, code: totp(user.totpSecret) }).expect(200);
-  const su = await agent.post('/v1/auth/step-up').set(CSRF).send({ method: 'TOTP', code: totp(user.totpSecret, 1) }).expect(200);
+  const login = await agent
+    .post('/v1/auth/password/login')
+    .send({ email: user.email, password: PASSWORD })
+    .expect(200);
+  await agent
+    .post('/v1/auth/2fa/verify')
+    .send({ challenge_token: login.body.challenge_token, code: totp(user.totpSecret) })
+    .expect(200);
+  const su = await agent
+    .post('/v1/auth/step-up')
+    .set(CSRF)
+    .send({ method: 'TOTP', code: totp(user.totpSecret, 1) })
+    .expect(200);
   return { agent, user, stepUp: su.body.step_up_token as string };
 }
 
 /** Вход мобильным клиентом: токены в теле ответа. */
-export async function loginMobile(t: TestApp, user: UserFixture): Promise<{ access: string; refresh: string }> {
-  const login = await t.http.post('/v1/auth/password/login').set('X-Client', 'mobile').send({ email: user.email, password: PASSWORD }).expect(200);
-  const res = await t.http.post('/v1/auth/2fa/verify').send({ challenge_token: login.body.challenge_token, code: totp(user.totpSecret) }).expect(200);
+export async function loginMobile(
+  t: TestApp,
+  user: UserFixture,
+): Promise<{ access: string; refresh: string }> {
+  const login = await t.http
+    .post('/v1/auth/password/login')
+    .set('X-Client', 'mobile')
+    .send({ email: user.email, password: PASSWORD })
+    .expect(200);
+  const res = await t.http
+    .post('/v1/auth/2fa/verify')
+    .send({ challenge_token: login.body.challenge_token, code: totp(user.totpSecret) })
+    .expect(200);
   return { access: res.body.access_token, refresh: res.body.refresh_token };
 }
 
@@ -125,13 +148,25 @@ export async function createHouse(t: TestApp, admin: WebSession, units = 12): Pr
     .post('/v1/admin/organizations')
     .set(CSRF)
     .set('X-Step-Up-Token', admin.stepUp)
-    .send({ name: unique('ОСИ'), bin: randomBin(), management_form: 'OSI', legal_address: 'г. Алматы, ул. Тестовая 1' })
+    .send({
+      name: unique('ОСИ'),
+      bin: randomBin(),
+      management_form: 'OSI',
+      legal_address: 'г. Алматы, ул. Тестовая 1',
+    })
     .expect(201);
   const house = await admin.agent
     .post('/v1/admin/houses')
     .set(CSRF)
     .set('X-Step-Up-Token', admin.stepUp)
-    .send({ organization_id: org.body.id, address: 'г. Алматы, ул. Тестовая 1', display_name: unique('Дом'), entrance_count: 2, unit_count: units, floor_count: 3 })
+    .send({
+      organization_id: org.body.id,
+      address: 'г. Алматы, ул. Тестовая 1',
+      display_name: unique('Дом'),
+      entrance_count: 2,
+      unit_count: units,
+      floor_count: 3,
+    })
     .expect(201);
   return { orgId: org.body.id, houseId: house.body.id };
 }
@@ -139,6 +174,8 @@ export async function createHouse(t: TestApp, admin: WebSession, units = 12): Pr
 /** Председатель дома, заведённый напрямую (быстрее полного онбординга; сам онбординг — в auth.e2e). */
 export async function createChairman(t: TestApp, houseId: string): Promise<UserFixture> {
   const user = await createUser(t, { name: 'Председатель' });
-  await t.db.houseMembership.create({ data: { house_id: houseId, user_id: user.id, role: 'CHAIRMAN', joined_via: 'ADMIN_PROVISION' } });
+  await t.db.houseMembership.create({
+    data: { house_id: houseId, user_id: user.id, role: 'CHAIRMAN', joined_via: 'ADMIN_PROVISION' },
+  });
   return user;
 }

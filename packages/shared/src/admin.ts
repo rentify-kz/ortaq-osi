@@ -40,7 +40,10 @@ export const CreateHouseRequest = z.object({
 });
 export type CreateHouseRequest = z.infer<typeof CreateHouseRequest>;
 
-export const UpdateHouseRequest = CreateHouseRequest.omit({ entrance_count: true, unit_count: true }).partial();
+export const UpdateHouseRequest = CreateHouseRequest.omit({
+  entrance_count: true,
+  unit_count: true,
+}).partial();
 export type UpdateHouseRequest = z.infer<typeof UpdateHouseRequest>;
 
 export const EntranceLayout = z.object({
@@ -84,6 +87,15 @@ export const HouseReadiness = z.object({
   chairman_activated: z.boolean(),
   residents_verified: z.number().int(),
   blocking_issues: z.array(z.string()),
+  /** Только в админ-панели. */
+  chairman: z
+    .object({
+      user_id: z.string(),
+      full_name: z.string(),
+      email: z.string().nullable(),
+      activated: z.boolean(),
+    })
+    .nullable(),
 });
 export type HouseReadiness = z.infer<typeof HouseReadiness>;
 

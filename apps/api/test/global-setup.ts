@@ -3,7 +3,8 @@ import { TEST_DB } from './test-env.js';
 
 /** Чистая схема ortaq_test и все миграции — тесты идут на тех же RLS и триггерах, что и прод. */
 export default function setup(): void {
-  const psql = (sql: string) => execFileSync('psql', [TEST_DB.migrator, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'inherit' });
+  const psql = (sql: string) =>
+    execFileSync('psql', [TEST_DB.migrator, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'inherit' });
   psql('DROP SCHEMA IF EXISTS public CASCADE');
   psql('CREATE SCHEMA public');
   psql('GRANT USAGE ON SCHEMA public TO app_rw, app_admin');

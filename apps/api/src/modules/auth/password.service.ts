@@ -37,7 +37,10 @@ export class PasswordService {
       throw AppError.unprocessable(ErrorCode.WEAK_PASSWORD, 'Пароль не должен содержать почту');
     }
     if (await this.breached.isBreached(password)) {
-      throw AppError.unprocessable(ErrorCode.BREACHED_PASSWORD, 'Этот пароль встречается в утечках, выберите другой');
+      throw AppError.unprocessable(
+        ErrorCode.BREACHED_PASSWORD,
+        'Этот пароль встречается в утечках, выберите другой',
+      );
     }
   }
 }

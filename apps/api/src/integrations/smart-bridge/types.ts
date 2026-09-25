@@ -58,8 +58,7 @@ export interface SigningOperation {
 }
 
 export type SigningResult =
-  | { status: 'PENDING' | 'REJECTED' | 'EXPIRED' }
-  | { status: 'SIGNED'; cms: Uint8Array };
+  { status: 'PENDING' | 'REJECTED' | 'EXPIRED' } | { status: 'SIGNED'; cms: Uint8Array };
 
 export interface SignatureVerification {
   valid: boolean;

@@ -71,6 +71,8 @@ export const typography = {
 } as const;
 
 /** CSS custom properties для web: подключаются в корневом CSS. */
+export { tailwindThemeCss } from './tailwind.js';
+
 export function cssVariables(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(colors.bg)) out[`--bg-${kebab(k)}`] = v;

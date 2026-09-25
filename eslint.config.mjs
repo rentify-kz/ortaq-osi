@@ -11,8 +11,9 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: "MemberExpression[object.name='localStorage']",
-          message: 'localStorage запрещён для токенов и чувствительных данных (13-security §2).',
+          selector:
+            'MemberExpression[object.name=/^(localStorage|sessionStorage)$/], MemberExpression[property.name=/^(localStorage|sessionStorage)$/]',
+          message: 'Браузерное хранилище запрещено: токены — только в httpOnly cookie (13-security §2).',
         },
       ],
     },

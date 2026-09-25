@@ -32,7 +32,15 @@ export class AppModule {
   static forRoot(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      imports: [CoreModule.forRoot(config), DbModule, AuditModule, IntegrationsModule, AuthModule, AdminModule, HousesModule],
+      imports: [
+        CoreModule.forRoot(config),
+        DbModule,
+        AuditModule,
+        IntegrationsModule,
+        AuthModule,
+        AdminModule,
+        HousesModule,
+      ],
       controllers: [HealthController],
       providers: [
         // Порядок важен: сначала лимиты (до дорогой проверки токена), затем доступ.

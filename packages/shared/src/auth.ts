@@ -44,11 +44,12 @@ export const MeResponse = z.object({
   full_name: z.string(),
   locale: Locale,
   is_platform_admin: z.boolean(),
-  memberships: z.array(
-    z.object({ house_id: z.string(), house_display_name: z.string(), role: HouseRole }),
-  ),
+  memberships: z.array(z.object({ house_id: z.string(), house_display_name: z.string(), role: HouseRole })),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
-export const PatchMeRequest = z.object({ full_name: z.string().trim().min(2).max(200).optional(), locale: Locale.optional() });
+export const PatchMeRequest = z.object({
+  full_name: z.string().trim().min(2).max(200).optional(),
+  locale: Locale.optional(),
+});
 export type PatchMeRequest = z.infer<typeof PatchMeRequest>;

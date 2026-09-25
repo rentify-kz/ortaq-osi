@@ -4,7 +4,8 @@ import { loadConfig } from '../src/config/config.js';
 const key = (seed: string) => Buffer.alloc(32, seed).toString('base64');
 
 export const TEST_DB = {
-  migrator: process.env.TEST_DATABASE_MIGRATOR_URL ?? 'postgresql://migrator:migrator@localhost:5432/ortaq_test',
+  migrator:
+    process.env.TEST_DATABASE_MIGRATOR_URL ?? 'postgresql://migrator:migrator@localhost:5432/ortaq_test',
   rw: process.env.TEST_DATABASE_URL ?? 'postgresql://app_rw:app_rw@localhost:5432/ortaq_test',
   admin: process.env.TEST_DATABASE_ADMIN_URL ?? 'postgresql://app_admin:app_admin@localhost:5432/ortaq_test',
 };

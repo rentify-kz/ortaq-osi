@@ -2,9 +2,9 @@ packages:
   - apps/*
   - packages/*
 onlyBuiltDependencies:
-  - "@prisma/client"
-  - "@prisma/engines"
-  - "@swc/core"
+  - '@prisma/client'
+  - '@prisma/engines'
+  - '@swc/core'
   - argon2
   - esbuild
   - prisma

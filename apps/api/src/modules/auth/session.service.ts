@@ -56,7 +56,14 @@ export class SessionService {
       },
       select: { id: true },
     });
-    return this.issue(session.id, input.userId, input.client, input.isPlatformAdmin, refreshToken, refreshExpiresAt);
+    return this.issue(
+      session.id,
+      input.userId,
+      input.client,
+      input.isPlatformAdmin,
+      refreshToken,
+      refreshExpiresAt,
+    );
   }
 
   async rotate(refreshToken: string, meta: { ip?: string; deviceInfo?: string }): Promise<IssuedSession> {
@@ -104,15 +111,24 @@ export class SessionService {
   }
 
   async revoke(sessionId: string): Promise<void> {
-    await this.db.rw.session.updateMany({ where: { id: sessionId, revoked_at: null }, data: { revoked_at: new Date() } });
+    await this.db.rw.session.updateMany({
+      where: { id: sessionId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
   }
 
   async revokeFamily(familyId: string): Promise<void> {
-    await this.db.rw.session.updateMany({ where: { family_id: familyId, revoked_at: null }, data: { revoked_at: new Date() } });
+    await this.db.rw.session.updateMany({
+      where: { family_id: familyId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
   }
 
   async revokeAllForUser(userId: string): Promise<void> {
-    await this.db.rw.session.updateMany({ where: { user_id: userId, revoked_at: null }, data: { revoked_at: new Date() } });
+    await this.db.rw.session.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
   }
 
   private async issue(
@@ -123,7 +139,12 @@ export class SessionService {
     refreshToken: string,
     refreshExpiresAt: Date,
   ): Promise<IssuedSession> {
-    const accessToken = await this.tokens.signAccess({ sub: userId, sid: sessionId, cli: client, adm: isPlatformAdmin });
+    const accessToken = await this.tokens.signAccess({
+      sub: userId,
+      sid: sessionId,
+      cli: client,
+      adm: isPlatformAdmin,
+    });
     return {
       sessionId,
       accessToken,

@@ -49,8 +49,9 @@
 |---|---|---|
 | `app_rw` | Все запросы API в скоупе дома | Действует, `BYPASSRLS` нет |
 | `app_admin` | `/admin/*`, системные задачи воркера (начисления, отчёты по всем домам) | Отдельный Prisma-клиент, каждое действие в аудит |
-| `app_audit_writer` | Запись в `AuditLog` | Только `INSERT` |
 | `migrator` | Миграции | Не используется приложением |
+
+`AuditLog`: у `app_rw` только `INSERT` (без `SELECT`, поэтому запись идёт без `RETURNING`), у `app_admin` — `SELECT` и `INSERT`, `UPDATE`/`DELETE`/`TRUNCATE` блокируются триггером даже для владельца.
 
 Глобальные таблицы без `house_id` — `User`, `BudgetCategory`, `ReportTemplate`, `LegalDocument`, `LegalChunk` — без политик по дому; доступ к `User` ограничивается на уровне сервиса.
 

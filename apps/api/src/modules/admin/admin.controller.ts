@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   AssignChairmanRequest,
   type AuditEntry,
@@ -26,7 +37,10 @@ import { ChairmanService } from './chairman.service.js';
 const uuid = new ParseUUIDPipe({ exceptionFactory: () => AppError.notFound() });
 const ListQuery = PageQuery.extend({ search: z.string().trim().max(100).optional() });
 const HouseListQuery = ListQuery.extend({ organization_id: z.string().uuid().optional() });
-const AuditQuery = PageQuery.extend({ house_id: z.string().uuid().optional(), cursor: z.string().regex(/^\d+$/).optional() });
+const AuditQuery = PageQuery.extend({
+  house_id: z.string().uuid().optional(),
+  cursor: z.string().regex(/^\d+$/).optional(),
+});
 
 /** docs/spec/03-api-contract.md §4. Только PLATFORM_ADMIN, только веб. Изменения — со step-up. */
 @Controller('admin')
@@ -39,13 +53,17 @@ export class AdminController {
   ) {}
 
   @Get('organizations')
-  listOrganizations(@Query(new ZodPipe(ListQuery)) q: z.infer<typeof ListQuery>): Promise<Page<Organization>> {
+  listOrganizations(
+    @Query(new ZodPipe(ListQuery)) q: z.infer<typeof ListQuery>,
+  ): Promise<Page<Organization>> {
     return this.admin.listOrganizations(q);
   }
 
   @Post('organizations')
   @StepUp()
-  createOrganization(@Body(new ZodPipe(CreateOrganizationRequest)) body: CreateOrganizationRequest): Promise<Organization> {
+  createOrganization(
+    @Body(new ZodPipe(CreateOrganizationRequest)) body: CreateOrganizationRequest,
+  ): Promise<Organization> {
     return this.admin.createOrganization(body);
   }
 
@@ -76,14 +94,20 @@ export class AdminController {
 
   @Patch('houses/:id')
   @StepUp()
-  updateHouse(@Param('id', uuid) id: string, @Body(new ZodPipe(UpdateHouseRequest)) body: UpdateHouseRequest): Promise<House> {
+  updateHouse(
+    @Param('id', uuid) id: string,
+    @Body(new ZodPipe(UpdateHouseRequest)) body: UpdateHouseRequest,
+  ): Promise<House> {
     return this.admin.updateHouse(id, body);
   }
 
   @Post('houses/:id/generate-units')
   @StepUp()
   @HttpCode(200)
-  generateUnits(@Param('id', uuid) id: string, @Body(new ZodPipe(GenerateUnitsRequest)) body: GenerateUnitsRequest): Promise<House> {
+  generateUnits(
+    @Param('id', uuid) id: string,
+    @Body(new ZodPipe(GenerateUnitsRequest)) body: GenerateUnitsRequest,
+  ): Promise<House> {
     return this.admin.regenerateUnits(id, body.entrances, body.unit_type);
   }
 
@@ -125,19 +149,44 @@ export class AdminController {
   @Get('audit')
   async audit(@Query(new ZodPipe(AuditQuery)) q: z.infer<typeof AuditQuery>): Promise<Page<AuditEntry>> {
     const rows = await this.db.tx.auditLog.findMany({
-      where: { ...(q.house_id ? { house_id: q.house_id } : {}), ...(q.cursor ? { seq: { lt: BigInt(q.cursor) } } : {}) },
+      where: {
+        ...(q.house_id ? { house_id: q.house_id } : {}),
+        ...(q.cursor ? { seq: { lt: BigInt(q.cursor) } } : {}),
+      },
       orderBy: { seq: 'desc' },
       take: q.limit + 1,
-      select: { id: true, seq: true, house_id: true, actor_id: true, actor_role: true, action: true, entity_type: true, entity_id: true, created_at: true },
+      select: {
+        id: true,
+        seq: true,
+        house_id: true,
+        actor_id: true,
+        actor_role: true,
+        action: true,
+        entity_type: true,
+        entity_id: true,
+        created_at: true,
+      },
     });
-    const page = paginate(rows, q.limit, (r) => ({ ...r, seq: r.seq.toString(), created_at: r.created_at.toISOString() }));
-    return { items: page.items, next_cursor: page.next_cursor ? page.items[page.items.length - 1]!.seq : null };
+    const page = paginate(rows, q.limit, (r) => ({
+      ...r,
+      seq: r.seq.toString(),
+      created_at: r.created_at.toISOString(),
+    }));
+    return {
+      items: page.items,
+      next_cursor: page.next_cursor ? page.items[page.items.length - 1]!.seq : null,
+    };
   }
 
   /** Проверка хеш-цепочки. Пустой список — журнал цел. */
   @Get('audit/verify')
   async verifyAudit(): Promise<{ intact: boolean; broken: { house_id: string | null; seq: string }[] }> {
-    const rows = await this.db.tx.$queryRaw<{ house_id: string | null; bad_seq: bigint }[]>`SELECT * FROM audit_verify_chain()`;
-    return { intact: rows.length === 0, broken: rows.map((r) => ({ house_id: r.house_id, seq: r.bad_seq.toString() })) };
+    const rows = await this.db.tx.$queryRaw<
+      { house_id: string | null; bad_seq: bigint }[]
+    >`SELECT * FROM audit_verify_chain()`;
+    return {
+      intact: rows.length === 0,
+      broken: rows.map((r) => ({ house_id: r.house_id, seq: r.bad_seq.toString() })),
+    };
   }
 }

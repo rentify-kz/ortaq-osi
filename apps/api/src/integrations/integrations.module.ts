@@ -42,7 +42,8 @@ function mockOnly<T>(name: string, config: AppConfig, factory: () => T): T {
     {
       provide: PROPERTY_REGISTRY_PROVIDER,
       inject: [APP_CONFIG],
-      useFactory: (c: AppConfig) => mockOnly('PROPERTY_REGISTRY_PROVIDER', c, () => new MockPropertyRegistryProvider()),
+      useFactory: (c: AppConfig) =>
+        mockOnly('PROPERTY_REGISTRY_PROVIDER', c, () => new MockPropertyRegistryProvider()),
     },
     {
       provide: SIGNATURE_PROVIDER,
@@ -50,6 +51,12 @@ function mockOnly<T>(name: string, config: AppConfig, factory: () => T): T {
       useFactory: (c: AppConfig) => mockOnly('SIGNATURE_PROVIDER', c, () => new MockSignatureProvider()),
     },
   ],
-  exports: [MAIL_PROVIDER, BREACHED_PASSWORD_CHECKER, IDENTITY_PROVIDER, PROPERTY_REGISTRY_PROVIDER, SIGNATURE_PROVIDER],
+  exports: [
+    MAIL_PROVIDER,
+    BREACHED_PASSWORD_CHECKER,
+    IDENTITY_PROVIDER,
+    PROPERTY_REGISTRY_PROVIDER,
+    SIGNATURE_PROVIDER,
+  ],
 })
 export class IntegrationsModule {}

@@ -31,8 +31,10 @@ export class RateLimitGuard implements CanActivate {
     if (!this.config.RATE_LIMIT_ENABLED) return true;
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
     const cls =
-      this.reflector.getAllAndOverride<RateClass | undefined>(META.rateClass, [ctx.getHandler(), ctx.getClass()]) ??
-      (req.method === 'GET' ? 'read' : 'write');
+      this.reflector.getAllAndOverride<RateClass | undefined>(META.rateClass, [
+        ctx.getHandler(),
+        ctx.getClass(),
+      ]) ?? (req.method === 'GET' ? 'read' : 'write');
 
     const key = `${cls}:${this.subject(req, cls)}`;
     const { max, windowMs } = LIMITS[cls];
@@ -48,7 +50,9 @@ export class RateLimitGuard implements CanActivate {
     if (bucket.count > max) {
       const retryAfterSec = Math.ceil((bucket.resetAt - now) / 1000);
       ctx.switchToHttp().getResponse().setHeader('Retry-After', String(retryAfterSec));
-      throw new AppError(429, ErrorCode.RATE_LIMITED, 'Слишком много запросов', { retry_after_sec: retryAfterSec });
+      throw new AppError(429, ErrorCode.RATE_LIMITED, 'Слишком много запросов', {
+        retry_after_sec: retryAfterSec,
+      });
     }
     return true;
   }
@@ -58,7 +62,12 @@ export class RateLimitGuard implements CanActivate {
     const ip = req.ip ?? 'unknown';
     if (cls === 'auth') {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const id = typeof body.email === 'string' ? body.email.toLowerCase() : typeof body.phone === 'string' ? body.phone : '';
+      const id =
+        typeof body.email === 'string'
+          ? body.email.toLowerCase()
+          : typeof body.phone === 'string'
+            ? body.phone
+            : '';
       return `${ip}|${req.path}|${id}`;
     }
     // Гард идёт до аутентификации, поэтому ключ — сам токен (cookie или Bearer), а не user_id.

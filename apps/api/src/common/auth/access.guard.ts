@@ -30,7 +30,8 @@ export class AccessGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
-    const meta = <T>(key: string) => this.reflector.getAllAndOverride<T>(key, [ctx.getHandler(), ctx.getClass()]);
+    const meta = <T>(key: string) =>
+      this.reflector.getAllAndOverride<T>(key, [ctx.getHandler(), ctx.getClass()]);
 
     const isPublic = meta<boolean>(META.public) === true;
     const adminOnly = meta<boolean>(META.adminOnly) === true;
@@ -66,14 +67,21 @@ export class AccessGuard implements CanActivate {
     if (!token) return null;
     const claims = await this.tokens.verifyAccess(token);
     if (!claims) return null;
-    if (adminOnly && claims.cli !== 'WEB') throw AppError.unauthenticated('Админ-панель доступна только из веба');
+    if (adminOnly && claims.cli !== 'WEB')
+      throw AppError.unauthenticated('Админ-панель доступна только из веба');
 
     // Сессия проверяется на каждый запрос: выход, отзыв и блокировка действуют сразу, а не через 15 минут.
     const session = await this.db.rw.session.findUnique({
       where: { id: claims.sid },
-      select: { revoked_at: true, expires_at: true, user_id: true, user: { select: { status: true, is_platform_admin: true } } },
+      select: {
+        revoked_at: true,
+        expires_at: true,
+        user_id: true,
+        user: { select: { status: true, is_platform_admin: true } },
+      },
     });
-    if (!session || session.user_id !== claims.sub || session.revoked_at || session.expires_at < new Date()) return null;
+    if (!session || session.user_id !== claims.sub || session.revoked_at || session.expires_at < new Date())
+      return null;
     if (session.user.status !== 'ACTIVE') return null;
 
     return {

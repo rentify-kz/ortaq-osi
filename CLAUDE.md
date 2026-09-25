@@ -21,3 +21,12 @@ pnpm workspaces + Turborepo. `apps/api` — NestJS (модульный моно�
 - Токены в вебе — httpOnly cookie. `localStorage` для токенов запрещён.
 - Все строки UI — через i18n (`ru`, `kk`).
 - Миграции — expand/contract, обратимые.
+
+## Рабочий процесс
+
+- Работа идёт по фазам из `docs/spec/15-roadmap.md`. **В конце каждой фазы — чек-лист для пользователя: что проверить руками, прежде чем идти дальше.** Статус фаз — в `docs/ANALYSIS.md`.
+- Новый эндпоинт в скоупе дома: `@HouseScoped(...)`, путь с `:houseId`, данные через `db.tx` (RLS уже выставлен), путь добавить в `apps/api/test/isolation.e2e.test.ts`.
+- Изменение данных пишет `AuditService.record(...)` в той же транзакции. Опасные действия — `@StepUp()`.
+- Контракт запросов/ответов — zod-схемы в `packages/shared`; после правки `pnpm --filter @ortaq/shared build`.
+- Проверки перед коммитом: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test`. Тесты API идут на реальной БД `ortaq_test` (роли из `infra/db/bootstrap.sql`).
+- Изменили спецификацию поведения — правим `docs/spec/` в том же коммите.

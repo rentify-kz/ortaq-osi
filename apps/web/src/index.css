@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+@import '@ortaq/design-tokens/theme.css';
+
+@layer base {
+  html {
+    @apply bg-bg-subtle font-sans text-body text-text-primary antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* Табличные цифры для чисел и сумм (docs/spec/12-design-system.md §2). */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

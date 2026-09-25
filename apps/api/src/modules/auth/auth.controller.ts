@@ -44,7 +44,10 @@ export class AuthController {
   @Public()
   @RateLimit('auth')
   @HttpCode(200)
-  login(@Body(new ZodPipe(PasswordLoginRequest)) body: PasswordLoginRequest, @Req() req: Request): Promise<PasswordLoginResponse> {
+  login(
+    @Body(new ZodPipe(PasswordLoginRequest)) body: PasswordLoginRequest,
+    @Req() req: Request,
+  ): Promise<PasswordLoginResponse> {
     return this.auth.passwordLogin(body.email, body.password, meta(req));
   }
 
@@ -52,7 +55,10 @@ export class AuthController {
   @Public()
   @RateLimit('auth')
   @HttpCode(200)
-  setPassword(@Body(new ZodPipe(PasswordSetRequest)) body: PasswordSetRequest, @Req() req: Request): Promise<PasswordLoginResponse> {
+  setPassword(
+    @Body(new ZodPipe(PasswordSetRequest)) body: PasswordSetRequest,
+    @Req() req: Request,
+  ): Promise<PasswordLoginResponse> {
     return this.auth.setPassword(body.token, body.password, meta(req));
   }
 
@@ -60,7 +66,9 @@ export class AuthController {
   @Public()
   @RateLimit('auth')
   @HttpCode(200)
-  setupTotp(@Body(new ZodPipe(TotpSetupRequest)) body: { challenge_token?: string }): Promise<TotpSetupResponse> {
+  setupTotp(
+    @Body(new ZodPipe(TotpSetupRequest)) body: { challenge_token?: string },
+  ): Promise<TotpSetupResponse> {
     if (!body.challenge_token) throw AppError.unauthenticated();
     return this.auth.setupTotp(body.challenge_token);
   }
@@ -109,7 +117,10 @@ export class AuthController {
   @Post('step-up')
   @RateLimit('auth')
   @HttpCode(200)
-  async stepUp(@CurrentActor() actor: Actor, @Body(new ZodPipe(StepUpRequest)) body: StepUpRequest): Promise<StepUpResponse> {
+  async stepUp(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(StepUpRequest)) body: StepUpRequest,
+  ): Promise<StepUpResponse> {
     const { token, expiresAt } = await this.auth.stepUp(actor, body.code);
     return { step_up_token: token, expires_at: expiresAt.toISOString() };
   }

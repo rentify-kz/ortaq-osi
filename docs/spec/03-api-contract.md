@@ -73,7 +73,7 @@ API их не блокирует — иначе пришлось бы дубли
 | POST | `/auth/otp/verify` | — | — | нет | `auth` | да |
 | POST | `/auth/password/login` | — | — | нет | `auth` | да |
 | POST | `/auth/password/set` | — | — | нет | `auth` | да |
-| POST | `/auth/2fa/setup` | все с почтой | `self` | да | `auth` | да |
+| POST | `/auth/2fa/setup` | — (challenge-токен) | `self` | нет | `auth` | да |
 | POST | `/auth/2fa/verify` | — | — | нет | `auth` | да |
 | POST | `/auth/refresh` | — | — | нет | `auth` | да |
 | POST | `/auth/logout` | любая | `self` | нет | `write` | да |
@@ -85,6 +85,10 @@ API их не блокирует — иначе пришлось бы дубли
 | PATCH | `/me` | любая | `self` | нет | `write` | да |
 
 `POST /auth/otp/request` отвечает `200` независимо от того, зарегистрирован номер или нет. Иначе через форму входа собирается база жильцов дома.
+
+**Вход по почте — в два шага.** `password/login` не выдаёт сессию: он возвращает `{ next: "TOTP_VERIFY" | "TOTP_SETUP", challenge_token }` (5 минут). Сессию выдаёт только `2fa/verify`. `password/set` (ссылка из письма) возвращает тот же ответ. `2fa/setup` работает только по challenge-токену с `TOTP_SETUP`: смена устройства в активной сессии не поддерживается, потерянный второй фактор восстанавливается через админа платформы.
+
+**Доставка токенов.** Веб получает access и refresh только в httpOnly cookie (`SameSite=Strict`, refresh — с `Path=/v1/auth`). Мобильный клиент отправляет заголовок `X-Client: mobile` при входе и получает токены в теле ответа. Изменяющие запросы с cookie-сессией обязаны нести `X-Requested-With: ortaq-web`, иначе `403 CSRF_HEADER_MISSING`.
 
 `POST /auth/step-up` выдаёт краткоживущий `X-Step-Up-Token` на 5 минут. Способ зависит от роли:
 
@@ -113,8 +117,13 @@ API их не блокирует — иначе пришлось бы дубли
 | PATCH | `/admin/houses/:id` | admin | `global` | да | `write` | да |
 | POST | `/admin/houses/:id/generate-units` | admin | `global` | да | `write` | да |
 | GET | `/admin/houses/:id/readiness` | admin | `global` | нет | `read` | нет |
+| GET | `/admin/houses/:id` | admin | `global` | нет | `read` | нет |
+| GET | `/admin/houses/:id/units` | admin | `global` | нет | `read` | нет |
 | POST | `/admin/houses/:id/chairman` | admin | `global` | да | `write` | да |
+| POST | `/admin/houses/:id/chairman/resend-invite` | admin | `global` | да | `write` | да |
+| DELETE | `/admin/houses/:id/chairman` | admin | `global` | да | `write` | да |
 | GET | `/admin/audit` | admin | `global` | нет | `read` | нет |
+| GET | `/admin/audit/verify` | admin | `global` | нет | `read` | нет |
 
 **`POST /admin/houses`**
 
@@ -143,7 +152,7 @@ API их не блокирует — иначе пришлось бы дубли
 }
 ```
 
-Отвечает `409`, если по дому уже есть голосования или начисления: перегенерация помещений после этого разрушила бы связи.
+Отвечает `409 UNITS_LOCKED`, если у помещений уже заполнены площади (перегенерация их сотрёт), а с фаз 1, 3, 4 — также при наличии собственников, начислений или голосований: перегенерация разрушила бы связи.
 
 **`GET /admin/houses/:id/readiness`** — состояние подключения дома:
 
@@ -184,6 +193,8 @@ API их не блокирует — иначе пришлось бы дубли
 | GET | `/houses/:id/home` | член дома | `house` | нет | `read` | нет |
 
 `GET /houses` возвращает дома, где у вызывающего есть активное членство. Для председателя с несколькими домами это источник данных для переключателя.
+
+`GET /houses/:id` дополнительно отдаёт `areas_filled`, `areas_total`, `registry_uploaded` — для чек-листа подготовки дома (04 §4).
 
 `POST /houses/:id/units/bulk-areas` — массовое заполнение площадей, главный путь к `is_voting_ready`.
 
