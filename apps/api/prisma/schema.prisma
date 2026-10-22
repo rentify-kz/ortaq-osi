@@ -1,0 +1,327 @@
+// Модель данных фазы 0. Полное описание — docs/02-data-model.md.
+// Колонки и таблицы в snake_case: на них ссылаются политики RLS в миграциях.
+// Миграции применяются ролью-владельцем (MIGRATE_DATABASE_URL); приложение работает под ortaq_app.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("MIGRATE_DATABASE_URL")
+}
+
+enum ManagementForm {
+  OSI
+  PT
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum PaymentMode {
+  RECEIPT
+  KASPI_API
+}
+
+enum UnitType {
+  APARTMENT
+  COMMERCIAL
+  PARKING
+  STORAGE
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+enum Locale {
+  ru
+  kk
+}
+
+enum HouseRole {
+  CHAIRMAN
+  ACCOUNTANT
+  WORKER
+  RESIDENT
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum JoinedVia {
+  ADMIN_PROVISION
+  INVITE_LINK
+  JOIN_REQUEST
+  CHAIRMAN_ADD
+}
+
+enum OwnershipRelation {
+  OWNER
+  TENANT
+  FAMILY
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum VerificationMethod {
+  EDS_REGISTRY_MATCH
+  MANUAL_CHAIRMAN
+}
+
+enum InviteType {
+  PUBLIC_LINK
+  PERSONAL
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AuthTokenPurpose {
+  SET_PASSWORD
+  RESET_PASSWORD
+}
+
+model Organization {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  name           String
+  bin            String             @unique @db.VarChar(12)
+  managementForm ManagementForm     @map("management_form")
+  legalAddress   String             @map("legal_address")
+  bankDetails    Json?              @map("bank_details")
+  status         OrganizationStatus @default(ACTIVE)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  houses         House[]
+
+  @@map("organizations")
+}
+
+model House {
+  id                 String       @id @default(uuid(7)) @db.Uuid
+  organizationId     String       @map("organization_id") @db.Uuid
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  address            String
+  displayName        String       @map("display_name")
+  entranceCount      Int          @map("entrance_count")
+  unitCount          Int          @map("unit_count")
+  floorCount         Int?         @map("floor_count")
+  builtYear          Int?         @map("built_year")
+  /// Сумма площадей помещений. Пересчитывается триггером, не вводится
+  totalArea          Decimal      @default(0) @map("total_area") @db.Decimal(12, 2)
+  /// true, когда у всех голосующих помещений есть площадь. Пересчитывается триггером
+  isVotingReady      Boolean      @default(false) @map("is_voting_ready")
+  registryUploadedAt DateTime?    @map("registry_uploaded_at") @db.Timestamptz
+  paymentMode        PaymentMode  @default(RECEIPT) @map("payment_mode")
+  kaspiConfig        Json?        @map("kaspi_config")
+  timezone           String       @default("Asia/Almaty")
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  units        Unit[]
+  memberships  HouseMembership[]
+  invites      Invite[]
+  joinRequests JoinRequest[]
+
+  @@index([organizationId])
+  @@map("houses")
+}
+
+model Unit {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  houseId               String   @map("house_id") @db.Uuid
+  house                 House    @relation(fields: [houseId], references: [id])
+  /// Текст, потому что бывают «12А» и «1/2»
+  number                String
+  type                  UnitType @default(APARTMENT)
+  /// Площадь, м². Основа веса голоса. Пусто до заполнения
+  area                  Decimal? @db.Decimal(8, 2)
+  entrance              Int?
+  floor                 Int?
+  rooms                 Int?
+  isExcludedFromVoting  Boolean  @default(false) @map("is_excluded_from_voting")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  ownerships UnitOwnership[]
+
+  @@unique([houseId, number])
+  @@map("units")
+}
+
+model User {
+  id                  String     @id @default(uuid(7)) @db.Uuid
+  phone               String?    @unique @db.VarChar(16)
+  email               String?    @unique @db.Citext
+  passwordHash        String?    @map("password_hash")
+  fullName            String     @map("full_name")
+  iinEncrypted        Bytes?     @map("iin_encrypted")
+  iinHash             Bytes?     @map("iin_hash")
+  identityVerifiedAt  DateTime?  @map("identity_verified_at") @db.Timestamptz
+  locale              Locale     @default(ru)
+  /// TOTP-секрет, AES-256-GCM. Обязателен для админа, председателя, бухгалтера
+  totpSecretEncrypted Bytes?     @map("totp_secret_encrypted")
+  totpEnabledAt       DateTime?  @map("totp_enabled_at") @db.Timestamptz
+  isPlatformAdmin     Boolean    @default(false) @map("is_platform_admin")
+  status              UserStatus @default(PENDING)
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  memberships  HouseMembership[]
+  ownerships   UnitOwnership[]
+  sessions     Session[]
+  authTokens   AuthToken[]
+  joinRequests JoinRequest[]
+
+  @@map("users")
+}
+
+model HouseMembership {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation(fields: [userId], references: [id])
+  houseId   String           @map("house_id") @db.Uuid
+  house     House            @relation(fields: [houseId], references: [id])
+  role      HouseRole
+  status    MembershipStatus @default(ACTIVE)
+  joinedVia JoinedVia        @map("joined_via")
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt DateTime?        @map("revoked_at") @db.Timestamptz
+
+  // Уникальность (user_id, house_id) среди не отозванных — частичный индекс в миграции
+  @@index([houseId, role])
+  @@index([userId])
+  @@map("house_memberships")
+}
+
+model UnitOwnership {
+  id                     String              @id @default(uuid(7)) @db.Uuid
+  houseId                String              @map("house_id") @db.Uuid
+  unitId                 String              @map("unit_id") @db.Uuid
+  unit                   Unit                @relation(fields: [unitId], references: [id])
+  userId                 String              @map("user_id") @db.Uuid
+  user                   User                @relation(fields: [userId], references: [id])
+  relation               OwnershipRelation
+  share                  Decimal             @default(1) @db.Decimal(5, 4)
+  verificationStatus     VerificationStatus  @default(PENDING) @map("verification_status")
+  verificationMethod     VerificationMethod? @map("verification_method")
+  verifiedAt             DateTime?           @map("verified_at") @db.Timestamptz
+  verifiedBy             String?             @map("verified_by") @db.Uuid
+  isVotingRepresentative Boolean             @default(false) @map("is_voting_representative")
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([unitId, userId])
+  @@index([houseId])
+  @@map("unit_ownerships")
+}
+
+model Invite {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  houseId    String     @map("house_id") @db.Uuid
+  house      House      @relation(fields: [houseId], references: [id])
+  /// SHA-256 от токена. Сам токен показывается один раз и не хранится
+  tokenHash  Bytes      @unique @map("token_hash")
+  type       InviteType
+  targetRole HouseRole  @map("target_role")
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz
+  maxUses    Int?       @map("max_uses")
+  useCount   Int        @default(0) @map("use_count")
+  revokedAt  DateTime?  @map("revoked_at") @db.Timestamptz
+  createdBy  String     @map("created_by") @db.Uuid
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([houseId])
+  @@map("invites")
+}
+
+model JoinRequest {
+  id                String            @id @default(uuid(7)) @db.Uuid
+  houseId           String            @map("house_id") @db.Uuid
+  house             House             @relation(fields: [houseId], references: [id])
+  userId            String            @map("user_id") @db.Uuid
+  user              User              @relation(fields: [userId], references: [id])
+  claimedUnitNumber String            @map("claimed_unit_number")
+  claimedRelation   OwnershipRelation @map("claimed_relation")
+  comment           String?
+  status            JoinRequestStatus @default(PENDING)
+  reviewedBy        String?           @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime?         @map("reviewed_at") @db.Timestamptz
+  rejectionReason   String?           @map("rejection_reason")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([houseId, status])
+  @@map("join_requests")
+}
+
+/// Выданные refresh-токены. family_id связывает цепочку ротаций: повторное использование
+/// отозванного токена означает кражу, и вся семья отзывается
+model Session {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  user       User      @relation(fields: [userId], references: [id])
+  tokenHash  Bytes     @unique @map("token_hash")
+  familyId   String    @map("family_id") @db.Uuid
+  deviceInfo String?   @map("device_info")
+  ip         String?
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  rotatedAt  DateTime? @map("rotated_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Одноразовые токены из писем: установка и сброс пароля. Хранится только хеш
+model AuthToken {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  user       User             @relation(fields: [userId], references: [id])
+  tokenHash  Bytes            @unique @map("token_hash")
+  purpose    AuthTokenPurpose
+  expiresAt  DateTime         @map("expires_at") @db.Timestamptz
+  consumedAt DateTime?        @map("consumed_at") @db.Timestamptz
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("auth_tokens")
+}
+
+/// Журнал аудита. Append-only: у ortaq_app только INSERT и SELECT.
+/// Хеш-цепочка отдельная для каждого дома и одна общая для действий вне дома
+model AuditLog {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  houseId    String?   @map("house_id") @db.Uuid
+  actorId    String?   @map("actor_id") @db.Uuid
+  actorRole  String?   @map("actor_role")
+  action     String
+  entityType String    @map("entity_type")
+  entityId   String?   @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  seq        BigInt    @default(autoincrement())
+  prevHash   Bytes?    @map("prev_hash")
+  hash       Bytes
+
+  @@index([houseId, seq])
+  @@map("audit_log")
+}

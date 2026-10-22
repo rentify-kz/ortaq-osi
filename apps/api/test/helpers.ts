@@ -1,0 +1,111 @@
+import { Test } from '@nestjs/testing'
+import type { NestExpressApplication } from '@nestjs/platform-express'
+import { PrismaClient } from '@prisma/client'
+import * as argon2 from 'argon2'
+import request from 'supertest'
+import { expect } from 'vitest'
+import { AppModule } from '../src/app.module'
+import { configure } from '../src/bootstrap'
+import { RateLimiter } from '../src/common/guards'
+import { CryptoService } from '../src/infra/crypto.service'
+import { MailerService } from '../src/infra/mailer.service'
+import { TotpService } from '../src/modules/auth/totp.service'
+import { generateUnits } from '../src/modules/admin/units.generator'
+
+export const PASSWORD = 'correct horse battery staple'
+
+/** Роль-владелец: обходит RLS. Только для подготовки данных и для проверки подделки журнала */
+export const owner = new PrismaClient({ datasourceUrl: process.env.MIGRATE_DATABASE_URL })
+
+const crypto = new CryptoService()
+export const totp = new TotpService()
+
+export type TestApp = { app: NestExpressApplication; mailer: MailerService; limiter: RateLimiter }
+
+export async function createApp(): Promise<TestApp> {
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: process.env.TEST_LOG ? ['error', 'warn'] : false })
+  configure(app)
+  await app.init()
+  return { app, mailer: app.get(MailerService), limiter: app.get(RateLimiter) }
+}
+
+export async function resetDb() {
+  await owner.$executeRawUnsafe(
+    'TRUNCATE audit_log, sessions, auth_tokens, join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
+  )
+}
+
+let seq = 0
+const next = () => ++seq
+
+/** Пользователь с паролем и, при необходимости, уже подключённой 2FA */
+export async function makeUser(opts: { email?: string; admin?: boolean; totp?: boolean; phone?: string; fullName?: string } = {}) {
+  const secret = totp.generateSecret()
+  const user = await owner.user.create({
+    data: {
+      email: opts.email ?? `user${next()}@test.local`,
+      phone: opts.phone,
+      fullName: opts.fullName ?? 'Тестовый Пользователь',
+      passwordHash: await argon2.hash(PASSWORD, { type: argon2.argon2id }),
+      isPlatformAdmin: opts.admin ?? false,
+      status: 'ACTIVE',
+      totpSecretEncrypted: opts.totp === false ? null : crypto.encrypt(secret),
+      totpEnabledAt: opts.totp === false ? null : new Date(),
+    },
+  })
+  return { ...user, secret }
+}
+
+/** Валидный БИН с контрольным разрядом: 11 случайных цифр и подобранный двенадцатый */
+export function makeBin(): string {
+  for (;;) {
+    const base = String(Math.floor(Math.random() * 1e11)).padStart(11, '0')
+    const d = [...base].map(Number)
+    let c = d.reduce((s, v, i) => s + v * (i + 1), 0) % 11
+    if (c === 10) c = d.reduce((s, v, i) => s + v * ([3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2][i] ?? 0), 0) % 11
+    if (c !== 10) return base + c
+  }
+}
+
+/** Дом с помещениями без площадей и, по желанию, председателем */
+export async function makeHouse(opts: { units?: number; chairman?: { id: string } } = {}) {
+  const org = await owner.organization.create({
+    data: { name: `ОСИ Тест ${next()}`, bin: makeBin(), managementForm: 'OSI', legalAddress: 'г. Алматы, ул. Тестовая 1' },
+  })
+  const count = opts.units ?? 8
+  const house = await owner.house.create({
+    data: { organizationId: org.id, address: 'г. Алматы, ул. Тестовая 1', displayName: `ЖК Тест, блок ${next()}`, entranceCount: 2, unitCount: count, floorCount: 4 },
+  })
+  await owner.unit.createMany({
+    data: generateUnits([
+      { entrance: 1, from: 1, to: Math.ceil(count / 2), floors: 4 },
+      { entrance: 2, from: Math.ceil(count / 2) + 1, to: count, floors: 4 },
+    ]).map((u) => ({ ...u, houseId: house.id })),
+  })
+  if (opts.chairman) {
+    await owner.houseMembership.create({ data: { houseId: house.id, userId: opts.chairman.id, role: 'CHAIRMAN', joinedVia: 'ADMIN_PROVISION' } })
+  }
+  return { org, house }
+}
+
+export async function addMember(houseId: string, userId: string, role: 'RESIDENT' | 'WORKER' | 'ACCOUNTANT') {
+  return owner.houseMembership.create({ data: { houseId, userId, role, joinedVia: 'CHAIRMAN_ADD' } })
+}
+
+/** Полный вход: пароль, затем код. Агент дальше ходит с cookie */
+export async function login(t: TestApp, user: { email: string | null; secret: string }) {
+  const agent = request.agent(t.app.getHttpServer())
+  const first = await agent.post('/v1/auth/password/login').send({ email: user.email, password: PASSWORD })
+  expect(first.status).toBe(200)
+  expect(first.body.status).toBe('2FA_REQUIRED')
+  const second = await agent.post('/v1/auth/2fa/verify').send({ challenge: first.body.challenge, code: totp.generate(user.secret) })
+  expect(second.status).toBe(200)
+  return agent
+}
+
+export async function stepUpToken(agent: ReturnType<typeof request.agent>, secret: string): Promise<string> {
+  const res = await agent.post('/v1/auth/step-up').send({ code: totp.generate(secret) })
+  expect(res.status).toBe(200)
+  return res.body.step_up_token as string
+}

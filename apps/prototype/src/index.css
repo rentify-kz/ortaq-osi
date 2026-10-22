@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@theme {
+  /* Поверхности — разделение цветом, не рамками */
+  --color-canvas: #e7ebe8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f4f7f5;
+  --color-surface-3: #eaf0ec;
+
+  /* Чернила */
+  --color-ink: #0f1711;
+  --color-ink-2: #5a6b5f;
+  --color-ink-3: #93a398;
+
+  /* Бренд */
+  --color-brand-50: #edf7ef;
+  --color-brand-100: #d8eedf;
+  --color-brand-200: #b4ddc3;
+  --color-brand-300: #85c79f;
+  --color-brand-400: #4fac77;
+  --color-brand-500: #2e9e5b;
+  --color-brand-600: #1f6b3f;
+  --color-brand-700: #185231;
+  --color-brand-800: #123d25;
+  --color-brand-900: #0c2a19;
+
+  --color-danger: #dc2626;
+  --color-danger-soft: #fdeceb;
+  --color-warning: #d97706;
+  --color-warning-soft: #fdf4e7;
+  --color-success: #16a34a;
+
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Onest", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 26px;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+
+  /* Теней нет. Иерархия строится только на тональных слоях:
+     canvas → surface → surface-2 → surface-3 */
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  /* Цифры всегда табличные — колонки сумм не должны плясать */
+  .nums { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  ::selection { background: var(--color-brand-200); }
+  :focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; border-radius: 6px; }
+}
+
+/* Прокрутка внутри макета телефона без системной полосы */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility glass {
+  background: color-mix(in oklab, white 72%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
