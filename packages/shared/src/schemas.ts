@@ -159,6 +159,53 @@ export const joinRequestBody = z.object({
 })
 export type JoinRequestBody = z.infer<typeof joinRequestBody>
 
+/* ───────── фаза 1: жильцы ───────── */
+
+/** Версии текстов согласий: при изменении текста нужна новая запись, старые остаются в истории */
+export const TERMS_VERSION = '2026-10'
+export const PERSONAL_DATA_VERSION = '2026-10'
+
+/**
+ * Мобильный номер Казахстана в E.164: +7 7XX XXX XX XX.
+ * Принимает 8 777…, +7 (777)…, 7777… — как люди на самом деле пишут номер.
+ */
+export function normalizeKzPhone(input: string): string | null {
+  let d = input.replace(/\D/g, '')
+  if (d.length === 11 && d.startsWith('8')) d = `7${d.slice(1)}`
+  if (d.length === 10 && d.startsWith('7')) d = `7${d}`
+  // Только мобильные коды операторов: на городской номер SMS с кодом не дойдёт
+  return /^7(70[0125678]|747|75[01]|76[0-4]|77[15678])\d{7}$/.test(d) ? `+${d}` : null
+}
+
+export const phone = z.string().transform((v, ctx) => {
+  const n = normalizeKzPhone(v)
+  if (!n) {
+    ctx.addIssue({ code: 'custom', message: 'Мобильный номер Казахстана: +7 7XX XXX XX XX' })
+    return z.NEVER
+  }
+  return n
+})
+
+export const otpRequestBody = z.object({ phone })
+export type OtpRequestBody = z.input<typeof otpRequestBody>
+
+export const otpVerifyBody = z.object({ phone, code: z.string().trim().regex(/^\d{6}$/, 'Код из 6 цифр') })
+export type OtpVerifyBody = z.input<typeof otpVerifyBody>
+
+export const updateMeBody = z.object({ full_name: trimmed(3, 200) })
+export type UpdateMeBody = z.infer<typeof updateMeBody>
+
+/** Регистрация в доме по ссылке: дом зашит в токен, жилец выбирает своё помещение */
+export const acceptInviteBody = z.object({
+  unit_number: trimmed(1, 20).optional(),
+  relation: z.enum(['OWNER', 'TENANT']).optional(),
+  accept_terms: z.literal(true, 'Нужно согласие с правилами сервиса'),
+  notifications: z.boolean().default(true),
+})
+export type AcceptInviteBody = z.input<typeof acceptInviteBody>
+
+export const houseSearchQuery = z.object({ q: trimmed(3, 100) })
+
 /* ───────── ошибки ───────── */
 
 export type ApiError = { error: { code: string; message: string; details?: unknown } }

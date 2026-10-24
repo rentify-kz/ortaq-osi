@@ -133,30 +133,35 @@ model House {
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
-  units        Unit[]
-  memberships  HouseMembership[]
-  invites      Invite[]
-  joinRequests JoinRequest[]
+  units         Unit[]
+  memberships   HouseMembership[]
+  invites       Invite[]
+  joinRequests  JoinRequest[]
+  registry      OwnerRegistryEntry[]
+  imports       RegistryImport[]
+  announcements Announcement[]
+  staff         StaffMember[]
+  contractors   Contractor[]
 
   @@index([organizationId])
   @@map("houses")
 }
 
 model Unit {
-  id                    String   @id @default(uuid(7)) @db.Uuid
-  houseId               String   @map("house_id") @db.Uuid
-  house                 House    @relation(fields: [houseId], references: [id])
+  id                   String   @id @default(uuid(7)) @db.Uuid
+  houseId              String   @map("house_id") @db.Uuid
+  house                House    @relation(fields: [houseId], references: [id])
   /// Текст, потому что бывают «12А» и «1/2»
-  number                String
-  type                  UnitType @default(APARTMENT)
+  number               String
+  type                 UnitType @default(APARTMENT)
   /// Площадь, м². Основа веса голоса. Пусто до заполнения
-  area                  Decimal? @db.Decimal(8, 2)
-  entrance              Int?
-  floor                 Int?
-  rooms                 Int?
-  isExcludedFromVoting  Boolean  @default(false) @map("is_excluded_from_voting")
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  area                 Decimal? @db.Decimal(8, 2)
+  entrance             Int?
+  floor                Int?
+  rooms                Int?
+  isExcludedFromVoting Boolean  @default(false) @map("is_excluded_from_voting")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   ownerships UnitOwnership[]
 
@@ -183,11 +188,16 @@ model User {
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
-  memberships  HouseMembership[]
-  ownerships   UnitOwnership[]
-  sessions     Session[]
-  authTokens   AuthToken[]
-  joinRequests JoinRequest[]
+  memberships       HouseMembership[]
+  ownerships        UnitOwnership[]
+  sessions          Session[]
+  authTokens        AuthToken[]
+  joinRequests      JoinRequest[]
+  consents          Consent[]
+  verifications     Verification[]
+  devices           DeviceToken[]
+  notifications     Notification[]
+  notificationPrefs NotificationPreference[]
 
   @@map("users")
 }
@@ -306,22 +316,328 @@ model AuthToken {
 /// Журнал аудита. Append-only: у ortaq_app только INSERT и SELECT.
 /// Хеш-цепочка отдельная для каждого дома и одна общая для действий вне дома
 model AuditLog {
-  id         String    @id @default(uuid(7)) @db.Uuid
-  houseId    String?   @map("house_id") @db.Uuid
-  actorId    String?   @map("actor_id") @db.Uuid
-  actorRole  String?   @map("actor_role")
+  id         String   @id @default(uuid(7)) @db.Uuid
+  houseId    String?  @map("house_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  String?  @map("actor_role")
   action     String
-  entityType String    @map("entity_type")
-  entityId   String?   @map("entity_id")
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
   before     Json?
   after      Json?
   ip         String?
-  userAgent  String?   @map("user_agent")
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  seq        BigInt    @default(autoincrement())
-  prevHash   Bytes?    @map("prev_hash")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  seq        BigInt   @default(autoincrement())
+  prevHash   Bytes?   @map("prev_hash")
   hash       Bytes
 
   @@index([houseId, seq])
   @@map("audit_log")
+}
+
+/**
+ * ═════════════════════════ Фаза 1 ═════════════════════════
+ */
+
+enum OtpPurpose {
+  LOGIN
+}
+
+enum ConsentKind {
+  TERMS
+  NOTIFICATIONS
+  PERSONAL_DATA
+}
+
+enum SignaturePurpose {
+  IDENTITY_VERIFICATION
+  BALLOT
+  PROTOCOL
+  REPORT
+}
+
+enum VerificationState {
+  PENDING
+  SIGNED
+  FAILED
+  EXPIRED
+}
+
+enum RegistryImportStatus {
+  PREVIEW
+  APPLIED
+  DISCARDED
+}
+
+enum AnnouncementAudience {
+  ALL
+  STAFF
+  SPECIFIC_USERS
+  ENTRANCE
+}
+
+enum Specialization {
+  PLUMBER
+  ELECTRICIAN
+  CLEANER
+  YARD_KEEPER
+  HANDYMAN
+  SECURITY
+  ELEVATOR
+  OTHER
+}
+
+enum NotificationPriority {
+  CRITICAL
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum NotificationCategory {
+  VOTES
+  REQUESTS
+  ANNOUNCEMENTS
+  PAYMENTS
+  REPORTS
+  MEMBERSHIP
+  SUMMARY
+}
+
+/// Одноразовый код из SMS. Хранится хешем, живёт 5 минут, не более 5 попыток
+model OtpCode {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  phone      String     @db.VarChar(16)
+  codeHash   Bytes      @map("code_hash")
+  purpose    OtpPurpose @default(LOGIN)
+  attempts   Int        @default(0)
+  ip         String?
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz
+  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([phone, createdAt])
+  @@index([ip, createdAt])
+  @@map("otp_codes")
+}
+
+/// Согласия с версией текста. Отзыв не удаляет запись, а ставит revoked_at
+model Consent {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  user        User        @relation(fields: [userId], references: [id])
+  kind        ConsentKind
+  version     String
+  signatureId String?     @map("signature_id") @db.Uuid
+  acceptedAt  DateTime    @default(now()) @map("accepted_at") @db.Timestamptz
+  revokedAt   DateTime?   @map("revoked_at") @db.Timestamptz
+
+  @@index([userId, kind])
+  @@map("consents")
+}
+
+/// Подпись ЭЦП, проверенная сервером. Хранится всё, что понадобится при разбирательстве
+model Signature {
+  id                 String           @id @default(uuid(7)) @db.Uuid
+  userId             String?          @map("user_id") @db.Uuid
+  provider           String
+  externalId         String           @map("external_id")
+  purpose            SignaturePurpose
+  documentHash       Bytes            @map("document_hash")
+  signatureData      Bytes            @map("signature_data")
+  signerIinHash      Bytes            @map("signer_iin_hash")
+  signerFullName     String           @map("signer_full_name")
+  certSerial         String           @map("cert_serial")
+  certValidFrom      DateTime         @map("cert_valid_from") @db.Timestamptz
+  certValidTo        DateTime         @map("cert_valid_to") @db.Timestamptz
+  verifiedAt         DateTime         @map("verified_at") @db.Timestamptz
+  verificationResult Json             @map("verification_result")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([provider, externalId])
+  @@map("signatures")
+}
+
+/// Процедура подтверждения личности: жилец подписывает согласие на обработку ПДн своей ЭЦП
+model Verification {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  userId       String            @map("user_id") @db.Uuid
+  user         User              @relation(fields: [userId], references: [id])
+  houseId      String?           @map("house_id") @db.Uuid
+  provider     String
+  externalId   String            @map("external_id")
+  document     String
+  documentHash Bytes             @map("document_hash")
+  state        VerificationState @default(PENDING)
+  signatureId  String?           @map("signature_id") @db.Uuid
+  result       Json?
+  expiresAt    DateTime          @map("expires_at") @db.Timestamptz
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  completedAt  DateTime?         @map("completed_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("verifications")
+}
+
+/// Реестр собственников. ИИН только как HMAC: утечка таблицы не раскрывает номера
+model OwnerRegistryEntry {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  houseId    String   @map("house_id") @db.Uuid
+  house      House    @relation(fields: [houseId], references: [id])
+  unitNumber String   @map("unit_number")
+  iinHash    Bytes    @map("iin_hash")
+  fullName   String   @map("full_name")
+  area       Decimal? @db.Decimal(8, 2)
+  importId   String   @map("import_id") @db.Uuid
+  importedAt DateTime @default(now()) @map("imported_at") @db.Timestamptz
+
+  @@index([houseId, iinHash])
+  @@index([houseId, unitNumber])
+  @@map("owner_registry_entries")
+}
+
+/// Загрузка реестра: сначала превью с ошибками, применение — отдельным действием
+model RegistryImport {
+  id        String               @id @default(uuid(7)) @db.Uuid
+  houseId   String               @map("house_id") @db.Uuid
+  house     House                @relation(fields: [houseId], references: [id])
+  fileName  String               @map("file_name")
+  status    RegistryImportStatus @default(PREVIEW)
+  /// Строки без ИИН: только хеш, ФИО, номер, площадь
+  rows      Json
+  issues    Json
+  createdBy String               @map("created_by") @db.Uuid
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  appliedAt DateTime?            @map("applied_at") @db.Timestamptz
+
+  @@index([houseId])
+  @@map("registry_imports")
+}
+
+model Announcement {
+  id          String               @id @default(uuid(7)) @db.Uuid
+  houseId     String               @map("house_id") @db.Uuid
+  house       House                @relation(fields: [houseId], references: [id])
+  authorId    String               @map("author_id") @db.Uuid
+  title       String
+  body        String
+  audience    AnnouncementAudience
+  isPinned    Boolean              @default(false) @map("is_pinned")
+  publishedAt DateTime             @default(now()) @map("published_at") @db.Timestamptz
+  expiresAt   DateTime?            @map("expires_at") @db.Timestamptz
+  deletedAt   DateTime?            @map("deleted_at") @db.Timestamptz
+  targets     AnnouncementTarget[]
+  reads       AnnouncementRead[]
+
+  @@index([houseId, publishedAt])
+  @@map("announcements")
+}
+
+model AnnouncementTarget {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  houseId        String       @map("house_id") @db.Uuid
+  announcementId String       @map("announcement_id") @db.Uuid
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  userId         String?      @map("user_id") @db.Uuid
+  entrance       Int?
+
+  @@index([announcementId])
+  @@map("announcement_targets")
+}
+
+model AnnouncementRead {
+  houseId        String       @map("house_id") @db.Uuid
+  announcementId String       @map("announcement_id") @db.Uuid
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  userId         String       @map("user_id") @db.Uuid
+  readAt         DateTime     @default(now()) @map("read_at") @db.Timestamptz
+
+  @@id([announcementId, userId])
+  @@map("announcement_reads")
+}
+
+model StaffMember {
+  id                 String           @id @default(uuid(7)) @db.Uuid
+  houseId            String           @map("house_id") @db.Uuid
+  house              House            @relation(fields: [houseId], references: [id])
+  userId             String?          @map("user_id") @db.Uuid
+  fullName           String           @map("full_name")
+  position           String
+  specializations    Specialization[]
+  phonePublic        String?          @map("phone_public") @db.VarChar(16)
+  workSchedule       String?          @map("work_schedule")
+  visibleToResidents Boolean          @default(true) @map("visible_to_residents")
+  isActive           Boolean          @default(true) @map("is_active")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([houseId])
+  @@map("staff_members")
+}
+
+model Contractor {
+  id                 String           @id @default(uuid(7)) @db.Uuid
+  houseId            String           @map("house_id") @db.Uuid
+  house              House            @relation(fields: [houseId], references: [id])
+  name               String
+  bin                String?          @db.VarChar(12)
+  specializations    Specialization[]
+  contactPerson      String?          @map("contact_person")
+  phone              String?          @db.VarChar(16)
+  email              String?
+  contractFrom       DateTime?        @map("contract_from") @db.Date
+  contractTo         DateTime?        @map("contract_to") @db.Date
+  visibleToResidents Boolean          @default(true) @map("visible_to_residents")
+  isActive           Boolean          @default(true) @map("is_active")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([houseId])
+  @@map("contractors")
+}
+
+model DeviceToken {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  token      String   @unique
+  platform   String
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+/// Уведомление и одновременно очередь отправки: scheduled_for сдвигается на утро в тихие часы
+model Notification {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  userId       String               @map("user_id") @db.Uuid
+  user         User                 @relation(fields: [userId], references: [id])
+  houseId      String?              @map("house_id") @db.Uuid
+  category     NotificationCategory
+  priority     NotificationPriority
+  title        String
+  body         String
+  payload      Json?
+  scheduledFor DateTime             @default(now()) @map("scheduled_for") @db.Timestamptz
+  sentAt       DateTime?            @map("sent_at") @db.Timestamptz
+  channels     String[]
+  readAt       DateTime?            @map("read_at") @db.Timestamptz
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@index([sentAt, scheduledFor])
+  @@map("notifications")
+}
+
+/// Отключённые категории push. Голосования отключить нельзя: юридически значимое извещение
+model NotificationPreference {
+  userId   String               @map("user_id") @db.Uuid
+  user     User                 @relation(fields: [userId], references: [id])
+  category NotificationCategory
+  push     Boolean
+
+  @@id([userId, category])
+  @@map("notification_preferences")
 }

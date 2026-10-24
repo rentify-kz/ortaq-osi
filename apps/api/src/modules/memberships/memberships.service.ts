@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common'
-import { createInviteBody, ErrorCode, type CreateInviteBody, type JoinRequestStatus } from '@ortaq/shared'
+import { acceptInviteBody, createInviteBody, ErrorCode, TERMS_VERSION, type CreateInviteBody, type JoinRequestBody, type JoinRequestStatus } from '@ortaq/shared'
+import type { z } from 'zod'
 import { asSystem, ctx } from '../../common/context'
-import { conflict, notFound, unprocessable } from '../../common/errors'
+import { AppError, conflict, notFound, unauthenticated, unprocessable } from '../../common/errors'
 import { maskPhone } from '../../common/mask'
 import { env } from '../../config/env'
 import { CryptoService } from '../../infra/crypto.service'
@@ -100,6 +101,109 @@ export class MembershipsService {
         await this.audit.append(tx, { houseId: invite?.houseId ?? null, action: 'invite.resolve', entityType: 'Invite', entityId: invite?.id ?? null })
         if (!invite || inviteStatus(invite) !== 'ACTIVE') return { valid: false as const }
         return { valid: true as const, house_display_name: invite.house.displayName, target_role: invite.targetRole }
+      }),
+    )
+  }
+
+  /** Действующее приглашение по токену или ошибка. Вызывается только в системном контексте */
+  private async activeInvite(tx: Tx, token: string) {
+    const invite = await tx.invite.findUnique({ where: { tokenHash: this.crypto.sha256(token) }, include: { house: true } })
+    if (!invite || inviteStatus(invite) !== 'ACTIVE') {
+      throw new AppError(400, ErrorCode.INVITE_INVALID, 'Ссылка не работает: её отозвали, у неё истёк срок или закончились активации')
+    }
+    return invite
+  }
+
+  /** Номера помещений для выбора при регистрации: без фамилий и площадей */
+  inviteUnits(token: string) {
+    return asSystem(() =>
+      this.db.run(async (tx) => {
+        const invite = await this.activeInvite(tx, token)
+        const units = await tx.unit.findMany({ where: { houseId: invite.houseId }, select: { number: true, entrance: true } })
+        return units.sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true }))
+      }),
+    )
+  }
+
+  /**
+   * Вступление по ссылке (docs/04 §5.3). Ссылка даёт дом и роль, но не право голоса:
+   * собственность остаётся PENDING до подтверждения личности через ЭЦП.
+   */
+  acceptInvite(token: string, input: z.input<typeof acceptInviteBody>) {
+    const body = acceptInviteBody.parse(input)
+    const userId = ctx().userId
+    if (!userId) throw unauthenticated()
+    return asSystem(() =>
+      this.db.run(async (tx) => {
+        const invite = await this.activeInvite(tx, token)
+        const houseId = invite.houseId
+        const role = invite.targetRole === 'WORKER' ? 'WORKER' : 'RESIDENT'
+
+        const existing = await tx.houseMembership.findFirst({ where: { houseId, userId, status: { not: 'REVOKED' } } })
+        if (existing) throw conflict(ErrorCode.ALREADY_MEMBER, 'Вы уже состоите в этом доме')
+
+        let unit: { id: string; number: string } | null = null
+        if (role === 'RESIDENT') {
+          if (!body.unit_number || !body.relation) throw unprocessable(ErrorCode.VALIDATION, 'Укажите помещение и кем вы в нём являетесь')
+          unit = await tx.unit.findFirst({ where: { houseId, number: body.unit_number }, select: { id: true, number: true } })
+          if (!unit) throw unprocessable(ErrorCode.UNIT_NOT_FOUND, `Помещения №${body.unit_number} в доме нет`)
+        }
+
+        // Условный инкремент: две одновременные регистрации не превысят лимит активаций
+        const claimed = await tx.$executeRaw`
+          UPDATE invites SET use_count = use_count + 1
+          WHERE id = ${invite.id}::uuid AND revoked_at IS NULL AND (max_uses IS NULL OR use_count < max_uses)`
+        if (claimed === 0) throw new AppError(400, ErrorCode.INVITE_INVALID, 'У ссылки закончились активации')
+
+        await tx.houseMembership.create({ data: { houseId, userId, role, status: 'ACTIVE', joinedVia: 'INVITE_LINK' } })
+        if (unit && body.relation) {
+          await tx.unitOwnership.create({ data: { houseId, unitId: unit.id, userId, relation: body.relation, verificationStatus: 'PENDING' } })
+        }
+        await tx.consent.create({ data: { userId, kind: 'TERMS', version: TERMS_VERSION } })
+        if (body.notifications) await tx.consent.create({ data: { userId, kind: 'NOTIFICATIONS', version: TERMS_VERSION } })
+
+        await this.audit.append(tx, {
+          houseId, action: 'invite.accept', entityType: 'Invite', entityId: invite.id,
+          after: { user_id: userId, role, unit: unit?.number ?? null, relation: body.relation ?? null },
+        })
+        return { house_id: houseId, house_display_name: invite.house.displayName, role }
+      }),
+    )
+  }
+
+  /** Вступление без ссылки (docs/04 §6): заявка председателю, решение за ним */
+  createJoinRequest(body: JoinRequestBody) {
+    const userId = ctx().userId
+    if (!userId) throw unauthenticated()
+    return asSystem(() =>
+      this.db.run(async (tx) => {
+        const house = await tx.house.findUnique({ where: { id: body.house_id }, select: { id: true } })
+        if (!house) throw notFound('Дом')
+        if (await tx.houseMembership.findFirst({ where: { houseId: house.id, userId, status: { not: 'REVOKED' } } })) {
+          throw conflict(ErrorCode.ALREADY_MEMBER, 'Вы уже состоите в этом доме')
+        }
+        if (await tx.joinRequest.findFirst({ where: { houseId: house.id, userId, status: 'PENDING' } })) {
+          throw conflict(ErrorCode.JOIN_REQUEST_EXISTS, 'Заявка уже отправлена и ждёт решения председателя')
+        }
+        const request = await tx.joinRequest.create({
+          data: { houseId: house.id, userId, claimedUnitNumber: body.unit_number, claimedRelation: body.relation, comment: body.comment ?? null },
+        })
+        await this.audit.append(tx, { houseId: house.id, action: 'join_request.create', entityType: 'JoinRequest', entityId: request.id })
+        return { id: request.id, status: request.status }
+      }),
+    )
+  }
+
+  /** Поиск дома по адресу для заявки без ссылки: только название и адрес, ничего больше */
+  searchHouses(q: string) {
+    return asSystem(() =>
+      this.db.run(async (tx) => {
+        const houses = await tx.house.findMany({
+          where: { OR: [{ displayName: { contains: q, mode: 'insensitive' } }, { address: { contains: q, mode: 'insensitive' } }] },
+          select: { id: true, displayName: true, address: true },
+          take: 10,
+        })
+        return houses.map((h) => ({ id: h.id, display_name: h.displayName, address: h.address }))
       }),
     )
   }

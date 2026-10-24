@@ -39,6 +39,25 @@ export class HousesController {
     })
   }
 
+  /** Моё место в доме: помещения и статус подтверждения личности — от него зависит право голоса */
+  @HouseScope() @Get(':houseId/me')
+  myPlace() {
+    const userId = ctx().userId ?? ''
+    return this.db.run(async (tx) => {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { identityVerifiedAt: true } })
+      const ownerships = await tx.unitOwnership.findMany({ where: { userId }, include: { unit: { select: { number: true, entrance: true, floor: true } } } })
+      return {
+        role: ctx().role,
+        identity_verified: user.identityVerifiedAt !== null,
+        units: ownerships.map((o) => ({
+          number: o.unit.number, entrance: o.unit.entrance, floor: o.unit.floor,
+          relation: o.relation, verification: o.verificationStatus,
+          can_vote: o.relation === 'OWNER' && o.verificationStatus === 'VERIFIED',
+        })),
+      }
+    })
+  }
+
   @HouseScope('CHAIRMAN', 'ACCOUNTANT') @Get(':houseId/readiness')
   houseReadiness(@Param('houseId') houseId: string) {
     return this.db.run((tx) => this.readiness.compute(tx, houseId))

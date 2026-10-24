@@ -9,6 +9,7 @@ import { configure } from '../src/bootstrap'
 import { RateLimiter } from '../src/common/guards'
 import { CryptoService } from '../src/infra/crypto.service'
 import { MailerService } from '../src/infra/mailer.service'
+import { SmsService } from '../src/infra/sms.service'
 import { TotpService } from '../src/modules/auth/totp.service'
 import { generateUnits } from '../src/modules/admin/units.generator'
 
@@ -20,19 +21,21 @@ export const owner = new PrismaClient({ datasourceUrl: process.env.MIGRATE_DATAB
 const crypto = new CryptoService()
 export const totp = new TotpService()
 
-export type TestApp = { app: NestExpressApplication; mailer: MailerService; limiter: RateLimiter }
+export type TestApp = { app: NestExpressApplication; mailer: MailerService; sms: SmsService; limiter: RateLimiter }
 
 export async function createApp(): Promise<TestApp> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: process.env.TEST_LOG ? ['error', 'warn'] : false })
   configure(app)
   await app.init()
-  return { app, mailer: app.get(MailerService), limiter: app.get(RateLimiter) }
+  return { app, mailer: app.get(MailerService), sms: app.get(SmsService), limiter: app.get(RateLimiter) }
 }
 
 export async function resetDb() {
   await owner.$executeRawUnsafe(
-    'TRUNCATE audit_log, sessions, auth_tokens, join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
+    'TRUNCATE audit_log, sessions, auth_tokens, otp_codes, consents, signatures, verifications, owner_registry_entries, registry_imports, ' +
+      'announcement_reads, announcement_targets, announcements, staff_members, contractors, device_tokens, notifications, notification_preferences, ' +
+      'join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
   )
 }
 
@@ -108,4 +111,14 @@ export async function stepUpToken(agent: ReturnType<typeof request.agent>, secre
   const res = await agent.post('/v1/auth/step-up').send({ code: totp.generate(secret) })
   expect(res.status).toBe(200)
   return res.body.step_up_token as string
+}
+
+/** Вход жильца по телефону: код берётся из заглушки SMS. Агент дальше ходит с cookie */
+export async function phoneLogin(t: TestApp, phone: string) {
+  const agent = request.agent(t.app.getHttpServer())
+  expect((await agent.post('/v1/auth/otp/request').send({ phone })).status).toBe(200)
+  const code = t.sms.outbox.at(-1)?.text.match(/\d{6}/)?.[0]
+  const res = await agent.post('/v1/auth/otp/verify').send({ phone, code })
+  expect(res.status).toBe(200)
+  return { agent, body: res.body as { is_new: boolean; user: { id: string; full_name: string } } }
 }

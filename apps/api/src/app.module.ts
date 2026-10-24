@@ -5,12 +5,14 @@ import { env } from './config/env'
 import { AdminGuard, AuthGuard, HouseGuard, RateLimitGuard, RateLimiter, StepUpGuard } from './common/guards'
 import { CryptoService } from './infra/crypto.service'
 import { MailerService } from './infra/mailer.service'
+import { SmsService } from './infra/sms.service'
 import { PrismaService } from './infra/prisma.service'
 import { AdminController } from './modules/admin/admin.controller'
 import { AdminService } from './modules/admin/admin.service'
 import { AuditService } from './modules/audit/audit.service'
 import { AuthController } from './modules/auth/auth.controller'
 import { AuthService } from './modules/auth/auth.service'
+import { OtpService } from './modules/auth/otp.service'
 import { PasswordService } from './modules/auth/password.service'
 import { SessionsService } from './modules/auth/sessions.service'
 import { TokensService } from './modules/auth/tokens.service'
@@ -30,7 +32,7 @@ import { MembershipsService } from './modules/memberships/memberships.service'
   ],
   controllers: [AuthController, AdminController, HousesController, MembershipsController],
   providers: [
-    PrismaService, CryptoService, MailerService, RateLimiter,
+    PrismaService, CryptoService, MailerService, SmsService, RateLimiter, OtpService,
     AuditService, TokensService, PasswordService, TotpService, SessionsService, AuthService,
     ReadinessService, AdminService, MembershipsService,
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up

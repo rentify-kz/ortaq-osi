@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service'
 import { PasswordService } from './password.service'
 import { SessionsService, type IssuedTokens } from './sessions.service'
 import { TokensService } from './tokens.service'
+import { OtpService } from './otp.service'
 import { TotpService } from './totp.service'
 
 /** Роли с доступом к деньгам дома: для них 2FA обязательна, docs/13 §2 */
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly tokens: TokensService,
     private readonly sessions: SessionsService,
     private readonly audit: AuditService,
+    private readonly otp: OtpService,
   ) {}
 
   /** Шаг 1: почта и пароль. Дальше — второй фактор или его настройка, сессию сразу не выдаём */
@@ -95,6 +97,21 @@ export class AuthService {
     ctx().userId = sub
     await this.assertTotp(sub, code)
     return this.completeLogin(sub)
+  }
+
+  /** Вход жильца и работника по коду из SMS. Новый номер — новая учётка, имя спросим следующим шагом */
+  async otpLogin(phone: string, code: string): Promise<AuthOutcome & { isNew: boolean }> {
+    const { userId, isNew } = await this.otp.verify(phone, code)
+    return { ...(await this.completeLogin(userId)), isNew }
+  }
+
+  async updateProfile(userId: string, fullName: string): Promise<MeResponse> {
+    await this.db.run(async (tx) => {
+      const before = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { fullName: true } })
+      await tx.user.update({ where: { id: userId }, data: { fullName } })
+      await this.audit.append(tx, { houseId: null, action: 'user.profile_update', entityType: 'User', entityId: userId, before, after: { fullName } })
+    })
+    return this.me(userId)
   }
 
   /** Повторное подтверждение перед опасным действием: токен на 5 минут */

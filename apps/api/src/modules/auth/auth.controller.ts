@@ -1,14 +1,16 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common'
 import type { Request, Response } from 'express'
 import {
-  passwordLoginBody, passwordSetBody, stepUpBody, twoFactorSetupBody, twoFactorVerifyBody,
-  type PasswordLoginBody, type PasswordSetBody, type StepUpBody, type TwoFactorSetupBody, type TwoFactorVerifyBody,
+  otpRequestBody, otpVerifyBody, passwordLoginBody, passwordSetBody, stepUpBody, twoFactorSetupBody, twoFactorVerifyBody, updateMeBody,
+  type PasswordLoginBody, type PasswordSetBody, type StepUpBody, type TwoFactorSetupBody, type TwoFactorVerifyBody, type UpdateMeBody,
 } from '@ortaq/shared'
+import type { z } from 'zod'
 import { ctx } from '../../common/context'
 import { Public, Rate } from '../../common/decorators'
 import { unauthenticated } from '../../common/errors'
 import { ZodPipe } from '../../common/zod.pipe'
 import { AuthService, type AuthOutcome } from './auth.service'
+import { OtpService } from './otp.service'
 import { ACCESS_COOKIE, REFRESH_COOKIE, SessionsService } from './sessions.service'
 import { TokensService } from './tokens.service'
 
@@ -21,11 +23,24 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly sessions: SessionsService,
     private readonly tokens: TokensService,
+    private readonly otp: OtpService,
   ) {}
 
   @Public() @Rate('auth') @Post('auth/password/login') @HttpCode(200)
   async login(@Body(new ZodPipe(passwordLoginBody)) body: PasswordLoginBody, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.respond(await this.auth.passwordLogin(body.email, body.password), req, res)
+  }
+
+  /** Код в SMS. Лимиты по номеру и IP — в OtpService, здесь общий лимит класса auth не нужен: он съел бы повторную отправку */
+  @Public() @Post('auth/otp/request') @HttpCode(200)
+  requestOtp(@Body(new ZodPipe(otpRequestBody)) body: z.output<typeof otpRequestBody>) {
+    return this.otp.request(body.phone)
+  }
+
+  @Public() @Rate('auth') @Post('auth/otp/verify') @HttpCode(200)
+  async verifyOtp(@Body(new ZodPipe(otpVerifyBody)) body: z.output<typeof otpVerifyBody>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const outcome = await this.auth.otpLogin(body.phone, body.code)
+    return { ...(this.respond(outcome, req, res) as object), is_new: outcome.isNew }
   }
 
   @Public() @Rate('auth') @Post('auth/password/set') @HttpCode(200)
@@ -86,6 +101,13 @@ export class AuthController {
     const userId = ctx().userId
     if (!userId) throw unauthenticated()
     return this.auth.me(userId)
+  }
+
+  @Patch('me')
+  updateMe(@Body(new ZodPipe(updateMeBody)) body: UpdateMeBody) {
+    const userId = ctx().userId
+    if (!userId) throw unauthenticated()
+    return this.auth.updateProfile(userId, body.full_name)
   }
 
   private respond(outcome: AuthOutcome, req: Request, res: Response) {

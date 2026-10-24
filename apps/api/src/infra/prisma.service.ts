@@ -16,7 +16,10 @@ import { ctx } from '../common/context'
  */
 
 /** Модели с колонкой house_id */
-const HOUSE_SCOPED = new Set<string>(['Unit', 'HouseMembership', 'UnitOwnership', 'Invite', 'JoinRequest'])
+const HOUSE_SCOPED = new Set<string>([
+  'Unit', 'HouseMembership', 'UnitOwnership', 'Invite', 'JoinRequest',
+  'OwnerRegistryEntry', 'RegistryImport', 'Announcement', 'AnnouncementTarget', 'AnnouncementRead', 'StaffMember', 'Contractor',
+])
 
 const WHERE_OPERATIONS = new Set<string>([
   'findFirst', 'findFirstOrThrow', 'findMany', 'findUnique', 'findUniqueOrThrow',
