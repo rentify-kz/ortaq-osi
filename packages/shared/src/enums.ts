@@ -6,6 +6,12 @@ export type HouseRole = (typeof HouseRole)[number]
 export const Specialization = ['PLUMBER', 'ELECTRICIAN', 'CLEANER', 'YARD_KEEPER', 'HANDYMAN', 'SECURITY', 'ELEVATOR', 'OTHER'] as const
 export type Specialization = (typeof Specialization)[number]
 
+export const AnnouncementAudience = ['ALL', 'STAFF', 'SPECIFIC_USERS', 'ENTRANCE'] as const
+export type AnnouncementAudience = (typeof AnnouncementAudience)[number]
+
+export const NotificationCategory = ['VOTES', 'REQUESTS', 'ANNOUNCEMENTS', 'PAYMENTS', 'REPORTS', 'MEMBERSHIP', 'SUMMARY'] as const
+export type NotificationCategory = (typeof NotificationCategory)[number]
+
 export const ManagementForm = ['OSI', 'PT'] as const
 export type ManagementForm = (typeof ManagementForm)[number]
 

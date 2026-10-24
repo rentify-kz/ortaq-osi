@@ -289,10 +289,11 @@ API их не блокирует — иначе пришлось бы дубли
 |---|---|---|---|---|---|---|
 | GET | `/houses/:id/announcements` | член дома | `house` | нет | `read` | нет |
 | POST | `/houses/:id/announcements` | chairman | `house` | нет | `write` | да |
-| PATCH | `/announcements/:id` | chairman | `house` | нет | `write` | да |
-| DELETE | `/announcements/:id` | chairman | `house` | нет | `write` | да |
-| POST | `/announcements/:id/read` | член дома | `self` | нет | `write` | нет |
-| GET | `/announcements/:id/stats` | chairman | `house` | нет | `read` | нет |
+| PATCH | `/houses/:id/announcements/:announcementId` | chairman | `house` | нет | `write` | да |
+| DELETE | `/houses/:id/announcements/:announcementId` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/announcements/:announcementId/read` | член дома | `house` | нет | `write` | нет |
+| GET | `/houses/:id/announcements/:announcementId/stats` | chairman | `house` | нет | `read` | нет |
+| POST | `/houses/:id/announcements/:announcementId/remind` | chairman | `house` | нет | `write` | да |
 
 `GET` отдаёт только те объявления, которые адресованы вызывающему: `ALL`, либо `STAFF` для персонала, либо адресные, где он в `AnnouncementTarget`.
 
@@ -469,11 +470,14 @@ API их не блокирует — иначе пришлось бы дубли
 | Метод | Путь | Роль | Скоуп | Step-up | Лимит | Аудит |
 |---|---|---|---|---|---|---|
 | GET | `/me/notifications` | любая | `self` | нет | `read` | нет |
+| POST | `/me/notifications/read-all` | любая | `self` | нет | `write` | нет |
 | POST | `/notifications/:id/read` | любая | `self` | нет | `write` | нет |
 | POST | `/me/devices` | любая | `self` | нет | `write` | да |
 | DELETE | `/me/devices/:id` | любая | `self` | нет | `write` | да |
 | GET | `/me/notification-settings` | любая | `self` | нет | `read` | нет |
 | PATCH | `/me/notification-settings` | любая | `self` | нет | `write` | да |
+
+Уведомления пишутся в исходящую очередь (`notifications`) отдельной системной транзакцией после основного действия; диспетчер в процессе API забирает строки через `FOR UPDATE SKIP LOCKED` раз в 30 секунд. Каналы и тихие часы — по [08-flows-system.md](08-flows-system.md#811-уведомления-правила-отправки). Push по категории `VOTES` не отключается. Push и SMS в разработке — заглушки с тем же интерфейсом (SMS приходят в Mailpit). Группировка однотипных уведомлений появится вместе с заявками.
 
 ## 19. Аудит
 

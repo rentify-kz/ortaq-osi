@@ -37,6 +37,12 @@ import { MembersController } from './modules/memberships/members.controller'
 import { MembersService } from './modules/memberships/members.service'
 import { StaffController } from './modules/staff/staff.controller'
 import { StaffService } from './modules/staff/staff.service'
+import { PushService } from './infra/push.service'
+import { AnnouncementsController } from './modules/announcements/announcements.controller'
+import { AnnouncementsService } from './modules/announcements/announcements.service'
+import { NotificationsController } from './modules/notifications/notifications.controller'
+import { NotificationsDispatcher } from './modules/notifications/notifications.dispatcher'
+import { NotificationsService } from './modules/notifications/notifications.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -56,6 +62,7 @@ const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
+    AnnouncementsController, NotificationsController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -63,6 +70,7 @@ const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
     AuditService, TokensService, PasswordService, TotpService, SessionsService, AuthService,
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
+    PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
     { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up
     { provide: APP_GUARD, useClass: AuthGuard },

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { acceptInviteBody, createInviteBody, ErrorCode, TERMS_VERSION, type CreateInviteBody, type JoinRequestBody, type JoinRequestStatus } from '@ortaq/shared'
+import { acceptInviteBody, createInviteBody, ErrorCode, NotificationCategory, TERMS_VERSION, type CreateInviteBody, type JoinRequestBody, type JoinRequestStatus } from '@ortaq/shared'
 import type { z } from 'zod'
 import { asSystem, ctx } from '../../common/context'
 import { AppError, conflict, notFound, unauthenticated, unprocessable } from '../../common/errors'
@@ -8,6 +8,7 @@ import { env } from '../../config/env'
 import { CryptoService } from '../../infra/crypto.service'
 import { PrismaService, type Tx } from '../../infra/prisma.service'
 import { AuditService } from '../audit/audit.service'
+import { NotificationsService } from '../notifications/notifications.service'
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -43,6 +44,7 @@ export class MembershipsService {
     private readonly db: PrismaService,
     private readonly crypto: CryptoService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /* ───────── приглашения ───────── */
@@ -161,6 +163,13 @@ export class MembershipsService {
         }
         await tx.consent.create({ data: { userId, kind: 'TERMS', version: TERMS_VERSION } })
         if (body.notifications) await tx.consent.create({ data: { userId, kind: 'NOTIFICATIONS', version: TERMS_VERSION } })
+        else {
+          // Отказ от уведомлений = push выключен везде, кроме голосований: их отключить нельзя (docs/08 §8.11)
+          await tx.notificationPreference.createMany({
+            data: NotificationCategory.filter((c) => c !== 'VOTES').map((category) => ({ userId, category, push: false })),
+            skipDuplicates: true,
+          })
+        }
 
         await this.audit.append(tx, {
           houseId, action: 'invite.accept', entityType: 'Invite', entityId: invite.id,
@@ -189,9 +198,17 @@ export class MembershipsService {
           data: { houseId: house.id, userId, claimedUnitNumber: body.unit_number, claimedRelation: body.relation, comment: body.comment ?? null },
         })
         await this.audit.append(tx, { houseId: house.id, action: 'join_request.create', entityType: 'JoinRequest', entityId: request.id })
-        return { id: request.id, status: request.status }
+        const chairmen = await tx.houseMembership.findMany({ where: { houseId: house.id, role: 'CHAIRMAN', status: 'ACTIVE' }, select: { userId: true } })
+        return { request, chairmen: chairmen.map((c) => c.userId), houseId: house.id }
       }),
-    )
+    ).then(async ({ request, chairmen, houseId }) => {
+      await this.notifications.notify({
+        userIds: chairmen, houseId, category: 'MEMBERSHIP', priority: 'NORMAL',
+        title: 'Новая заявка на вступление', body: `Помещение №${body.unit_number}. Проверьте и примите решение`,
+        payload: { join_request_id: request.id },
+      })
+      return { id: request.id, status: request.status }
+    })
   }
 
   /** Поиск дома по адресу для заявки без ссылки: только название и адрес, ничего больше */

@@ -17,6 +17,7 @@ let houseId = ''
 let unitId = ''
 let staffId = ''
 let contractorId = ''
+let announcementId = ''
 const agents = {} as Record<Role | 'OUTSIDER', ReturnType<typeof request.agent>>
 
 beforeAll(async () => {
@@ -30,6 +31,7 @@ beforeAll(async () => {
   unitId = (await owner.unit.findFirstOrThrow({ where: { houseId } })).id
   staffId = (await owner.staffMember.create({ data: { houseId, fullName: 'Петров Иван', position: 'Дворник' } })).id
   contractorId = (await owner.contractor.create({ data: { houseId, name: 'ТОО Лифт' } })).id
+  announcementId = (await owner.announcement.create({ data: { houseId, authorId: chairman.id, title: 'Тест', body: 'Текст', audience: 'ALL' } })).id
 
   agents.CHAIRMAN = await login(t, chairman)
   agents.ACCOUNTANT = await login(t, accountant)
@@ -68,6 +70,10 @@ const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => strin
   ['get', () => `/houses/${houseId}/contractors`, ALL],
   ['post', () => `/houses/${houseId}/contractors`, CHAIR],
   ['patch', () => `/houses/${houseId}/contractors/${contractorId}`, CHAIR],
+  ['get', () => `/houses/${houseId}/announcements`, ALL],
+  ['post', () => `/houses/${houseId}/announcements`, CHAIR],
+  ['patch', () => `/houses/${houseId}/announcements/${announcementId}`, CHAIR],
+  ['get', () => `/houses/${houseId}/announcements/${announcementId}/stats`, CHAIR],
 ]
 
 describe('access matrix', () => {

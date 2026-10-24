@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { InviteRole, InviteType, ManagementForm, OwnershipRelation, Specialization, UnitType } from './enums.js'
+import { AnnouncementAudience, InviteRole, InviteType, ManagementForm, NotificationCategory, OwnershipRelation, Specialization, UnitType } from './enums.js'
 import { isValidIinBin } from './iin.js'
 
 /* Схемы запросов фазы 0. JSON в snake_case, как в docs/03-api-contract.md */
@@ -358,6 +358,47 @@ export const updateContractorBody = contractorFields
   .refine((b) => Object.keys(b).length > 0, 'Нечего менять')
   .refine(contractDates, { message: 'Договор заканчивается раньше, чем начинается', path: ['contract_to'] })
 export type UpdateContractorBody = z.input<typeof updateContractorBody>
+
+/* ───────── объявления и уведомления ───────── */
+
+export const createAnnouncementBody = z
+  .object({
+    title: trimmed(3, 200),
+    body: trimmed(1, 10_000),
+    audience: z.enum(AnnouncementAudience),
+    user_ids: z.array(z.uuid()).min(1).max(500).optional(),
+    entrances: z.array(z.number().int().min(1).max(50)).min(1).max(50).optional(),
+    pinned: z.boolean().default(false),
+    /** Без push объявление появится только в ленте: для несрочного */
+    push: z.boolean().default(true),
+    expires_at: z.iso.datetime().nullable().optional(),
+  })
+  .refine((b) => b.audience !== 'SPECIFIC_USERS' || (b.user_ids?.length ?? 0) > 0, { message: 'Выберите получателей', path: ['user_ids'] })
+  .refine((b) => b.audience !== 'ENTRANCE' || (b.entrances?.length ?? 0) > 0, { message: 'Выберите подъезды', path: ['entrances'] })
+export type CreateAnnouncementBody = z.input<typeof createAnnouncementBody>
+
+/** Аудиторию после публикации не меняем: статистика прочтений потеряла бы смысл */
+export const updateAnnouncementBody = z
+  .object({
+    title: trimmed(3, 200).optional(),
+    body: trimmed(1, 10_000).optional(),
+    pinned: z.boolean().optional(),
+    expires_at: z.iso.datetime().nullable().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, 'Нечего менять')
+export type UpdateAnnouncementBody = z.input<typeof updateAnnouncementBody>
+
+export const deviceBody = z.object({
+  token: z.string().trim().min(10).max(4096),
+  platform: z.enum(['ios', 'android', 'web']),
+})
+export type DeviceBody = z.infer<typeof deviceBody>
+
+/** Push по категориям. Голосования выключить нельзя: это юридически значимое извещение (docs/08 §8.11) */
+export const notificationSettingsBody = z.object({
+  push: z.partialRecord(z.enum(NotificationCategory), z.boolean()).refine((p) => p.VOTES !== false, 'Уведомления о голосованиях отключить нельзя'),
+})
+export type NotificationSettingsBody = z.infer<typeof notificationSettingsBody>
 
 /* ───────── ошибки ───────── */
 

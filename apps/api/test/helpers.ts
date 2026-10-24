@@ -10,6 +10,8 @@ import { RateLimiter } from '../src/common/guards'
 import { CryptoService } from '../src/infra/crypto.service'
 import { MailerService } from '../src/infra/mailer.service'
 import { SmsService } from '../src/infra/sms.service'
+import { PushService } from '../src/infra/push.service'
+import { NotificationsDispatcher } from '../src/modules/notifications/notifications.dispatcher'
 import { TotpService } from '../src/modules/auth/totp.service'
 import { generateUnits } from '../src/modules/admin/units.generator'
 
@@ -21,14 +23,19 @@ export const owner = new PrismaClient({ datasourceUrl: process.env.MIGRATE_DATAB
 const crypto = new CryptoService()
 export const totp = new TotpService()
 
-export type TestApp = { app: NestExpressApplication; mailer: MailerService; sms: SmsService; limiter: RateLimiter }
+export type TestApp = {
+  app: NestExpressApplication; mailer: MailerService; sms: SmsService; push: PushService; dispatcher: NotificationsDispatcher; limiter: RateLimiter
+}
 
 export async function createApp(): Promise<TestApp> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: process.env.TEST_LOG ? ['error', 'warn'] : false })
   configure(app)
   await app.init()
-  return { app, mailer: app.get(MailerService), sms: app.get(SmsService), limiter: app.get(RateLimiter) }
+  return {
+    app, mailer: app.get(MailerService), sms: app.get(SmsService), push: app.get(PushService),
+    dispatcher: app.get(NotificationsDispatcher), limiter: app.get(RateLimiter),
+  }
 }
 
 export async function resetDb() {
