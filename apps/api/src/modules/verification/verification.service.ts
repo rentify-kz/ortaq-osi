@@ -2,18 +2,18 @@ import { Inject, Injectable } from '@nestjs/common'
 import { Prisma, type Verification } from '@prisma/client'
 import {
   ErrorCode, isValidIinBin, PERSONAL_DATA_VERSION,
-  type StartVerificationBody, type VerificationOutcome, type VerificationStatusResponse,
+  type StartVerificationBody, type VerificationStatusResponse,
 } from '@ortaq/shared'
 import { randomUUID } from 'node:crypto'
 import { asSystem, ctx } from '../../common/context'
 import { AppError, conflict, notFound, unauthenticated } from '../../common/errors'
 import { CryptoService } from '../../infra/crypto.service'
-import { PrismaService, type Tx } from '../../infra/prisma.service'
+import { PrismaService } from '../../infra/prisma.service'
 import { SIGNATURE_PROVIDER, type SignatureProvider } from '../../integrations/signature/signature.provider'
 import { AuditService } from '../audit/audit.service'
-import { maskIin, namesMatch, titleCaseName } from './names'
+import { maskIin, titleCaseName } from './names'
+import { RegistryMatcher } from './registry-matcher'
 
-type UnitResult = { house_id: string; unit_number: string; outcome: VerificationOutcome }
 type Signer = { iin: string; fullName: string }
 
 const notSigned = () => conflict(ErrorCode.VERIFICATION_NOT_SIGNED, 'Подпись ещё не получена. Подпишите документ в eGov mobile и нажмите «Готово»')
@@ -30,6 +30,7 @@ export class VerificationService {
     private readonly db: PrismaService,
     private readonly crypto: CryptoService,
     private readonly audit: AuditService,
+    private readonly matcher: RegistryMatcher,
     @Inject(SIGNATURE_PROVIDER) private readonly provider: SignatureProvider,
   ) {}
 
@@ -134,7 +135,7 @@ export class VerificationService {
         })
         await tx.consent.create({ data: { userId: v.userId, kind: 'PERSONAL_DATA', version: PERSONAL_DATA_VERSION, signatureId: sig.id } })
 
-        const units = await this.matchRegistry(tx, v.userId, iinHash, signer.fullName)
+        const units = await this.matcher.matchAll(tx, v.userId, iinHash, signer.fullName)
         const result = { full_name: fullName, iin_masked: maskIin(signer.iin), units }
         const done = await tx.verification.update({ where: { id: v.id }, data: { signatureId: sig.id, result, completedAt: now } })
         await this.audit.append(tx, {
@@ -144,58 +145,6 @@ export class VerificationService {
         return view(done)
       }),
     )
-  }
-
-  /**
-   * Сверка с реестром (docs/04 §7.2) во всех домах, где человек жилец. Совпали ИИН, помещение
-   * и ФИО — собственность подтверждена сразу. Всё остальное не отказ, а очередь председателю:
-   * реестр устаревает, квартиры продают, фамилии меняют.
-   */
-  private async matchRegistry(tx: Tx, userId: string, iinHash: Uint8Array<ArrayBuffer>, certName: string): Promise<UnitResult[]> {
-    const results: UnitResult[] = []
-    const memberships = await tx.houseMembership.findMany({ where: { userId, status: 'ACTIVE', role: 'RESIDENT' }, select: { houseId: true } })
-    for (const { houseId } of memberships) {
-      const entries = await tx.ownerRegistryEntry.findMany({ where: { houseId, iinHash } })
-      const ownerships = await tx.unitOwnership.findMany({ where: { houseId, userId }, include: { unit: { select: { number: true } } } })
-      const handled = new Set<string>()
-
-      for (const entry of entries) {
-        const unit = await tx.unit.findFirst({ where: { houseId, number: entry.unitNumber }, select: { id: true, number: true } })
-        if (!unit || handled.has(unit.id)) continue
-        handled.add(unit.id)
-        const existing = ownerships.find((o) => o.unitId === unit.id)
-        if (existing?.verificationStatus === 'VERIFIED') {
-          results.push({ house_id: houseId, unit_number: unit.number, outcome: 'MATCHED' })
-          continue
-        }
-        if (existing?.verificationStatus === 'REJECTED') continue
-
-        const nameOk = namesMatch(certName, entry.fullName)
-        const data = nameOk
-          ? { relation: 'OWNER' as const, verificationStatus: 'VERIFIED' as const, verificationMethod: 'EDS_REGISTRY_MATCH' as const, verifiedAt: new Date(), verificationNote: null }
-          : { relation: 'OWNER' as const, verificationStatus: 'PENDING' as const, verificationNote: `ФИО в ЭЦП не совпадает с реестром (в реестре: ${entry.fullName})` }
-        if (existing) await tx.unitOwnership.update({ where: { id: existing.id }, data })
-        else await tx.unitOwnership.create({ data: { houseId, unitId: unit.id, userId, ...data } })
-
-        const outcome: VerificationOutcome = !nameOk ? 'NAME_MISMATCH' : existing ? 'MATCHED' : 'MOVED'
-        results.push({ house_id: houseId, unit_number: unit.number, outcome })
-        if (nameOk) {
-          await this.audit.append(tx, {
-            houseId, action: 'ownership.verify', entityType: 'UnitOwnership', entityId: existing?.id ?? null,
-            after: { user_id: userId, unit: unit.number, method: 'EDS_REGISTRY_MATCH' },
-          })
-        }
-      }
-
-      for (const o of ownerships) {
-        if (handled.has(o.unitId) || o.verificationStatus !== 'PENDING') continue
-        const tenant = o.relation === 'TENANT'
-        const note = tenant ? 'Наниматель: проживание подтверждает председатель' : 'Нет в реестре собственников'
-        await tx.unitOwnership.update({ where: { id: o.id }, data: { verificationNote: note } })
-        results.push({ house_id: houseId, unit_number: o.unit.number, outcome: tenant ? 'TENANT' : 'NOT_IN_REGISTRY' })
-      }
-    }
-    return results
   }
 
   private userId(): string {

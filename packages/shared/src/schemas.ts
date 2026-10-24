@@ -233,6 +233,56 @@ export type DevSignBody = z.infer<typeof devSignBody>
 export const rejectOwnershipBody = z.object({ reason: trimmed(3, 500) })
 export type RejectOwnershipBody = z.infer<typeof rejectOwnershipBody>
 
+/* ───────── площади и реестр собственников ───────── */
+
+export const MAX_AREA = 9999.99
+
+/** Площадь, м²: от пользователя приходит и «54,3», и 54.3. Наружу — строка с двумя знаками, без float в базе */
+export const area = z
+  .union([z.number(), z.string().trim().transform((v) => Number(v.replace(',', '.')))])
+  .pipe(z.number().positive('Площадь должна быть больше нуля').max(MAX_AREA, 'Слишком большая площадь'))
+  .transform((v) => v.toFixed(2))
+
+export const updateUnitBody = z
+  .object({
+    area: area.nullable().optional(),
+    type: z.enum(UnitType).optional(),
+    rooms: z.number().int().min(0).max(20).nullable().optional(),
+    is_excluded_from_voting: z.boolean().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, 'Нечего менять')
+export type UpdateUnitBody = z.input<typeof updateUnitBody>
+
+export const bulkAreasBody = z.object({
+  areas: z.array(z.object({ unit_id: z.uuid(), area })).min(1).max(MAX_UNITS),
+})
+export type BulkAreasBody = z.input<typeof bulkAreasBody>
+
+/** Что делать с площадями из реестра: заполнить пустые (по умолчанию), перезаписать расхождения, не трогать */
+export const applyRegistryBody = z.object({ areas: z.enum(['fill_empty', 'overwrite', 'skip']).default('fill_empty') })
+export type ApplyRegistryBody = z.input<typeof applyRegistryBody>
+
+export type RegistryIssue = {
+  row: number
+  severity: 'error' | 'warning'
+  code: 'UNIT_NOT_FOUND' | 'IIN_INVALID' | 'NAME_MISSING' | 'DUPLICATE' | 'AREA_INVALID' | 'AREA_CONFLICT' | 'AREA_MISMATCH'
+  message: string
+}
+
+export type RegistryPreview = {
+  import_id: string
+  file_name: string
+  status: 'PREVIEW' | 'APPLIED' | 'DISCARDED'
+  rows_total: number
+  rows_valid: number
+  units_covered: number
+  units_missing: number
+  area_conflicts: number
+  issues: RegistryIssue[]
+  /** Первые строки без ИИН: ФИО, помещение, площадь — чтобы председатель узнал свой файл */
+  sample: { row: number; unit_number: string; full_name: string; area: string | null }[]
+}
+
 /* ───────── ошибки ───────── */
 
 export type ApiError = { error: { code: string; message: string; details?: unknown } }

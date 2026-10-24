@@ -33,6 +33,6 @@ describe('titleCaseName', () => {
 
 describe('maskIin', () => {
   it('keeps only the last four digits', () => {
-    expect(maskIin('900101300123')).toBe('•••• •••• 0123')
+    expect(maskIin('900101300126')).toBe('•••• •••• 0126')
   })
 })

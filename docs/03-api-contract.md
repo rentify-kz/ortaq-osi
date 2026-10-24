@@ -165,15 +165,18 @@ API их не блокирует — иначе пришлось бы дубли
 | GET | `/houses/:id/units` | chairman, accountant | `house` | нет | `read` | нет |
 | PATCH | `/houses/:id/units/:unitId` | chairman | `house` | да | `write` | да |
 | POST | `/houses/:id/units/bulk-areas` | chairman | `house` | да | `write` | да |
-| POST | `/houses/:id/registry/import` | chairman | `house` | да | `upload` | да |
-| GET | `/houses/:id/registry/preview` | chairman | `house` | нет | `read` | нет |
+| GET | `/houses/:id/registry` | chairman | `house` | нет | `read` | нет |
+| POST | `/houses/:id/registry/imports` | chairman | `house` | нет | `write` | да |
+| GET | `/houses/:id/registry/imports/:importId` | chairman | `house` | нет | `read` | нет |
+| POST | `/houses/:id/registry/imports/:importId/apply` | chairman | `house` | да | `write` | да |
+| DELETE | `/houses/:id/registry/imports/:importId` | chairman | `house` | нет | `write` | нет |
 | GET | `/houses/:id/home` | член дома | `house` | нет | `read` | нет |
 
 `GET /houses` возвращает дома, где у вызывающего есть активное членство. Для председателя с несколькими домами это источник данных для переключателя.
 
 `POST /houses/:id/units/bulk-areas` — массовое заполнение площадей, главный путь к `is_voting_ready`.
 
-`POST /houses/:id/registry/import` принимает XLSX/CSV, возвращает превью с ошибками до применения. ИИН из файла сразу хешируется и в исходном виде не сохраняется.
+`POST /houses/:id/registry/imports` принимает XLSX/CSV (multipart, поле `file`, до 5 МБ) и возвращает превью с ошибками; в реестр при этом ничего не пишется, поэтому без step-up. ИИН из файла сразу хешируется и в исходном виде не сохраняется, исходный файл тоже. `.../apply` (step-up) заменяет реестр целиком, заполняет площади (`areas`: `fill_empty` по умолчанию, `overwrite`, `skip`) и сразу сверяет с новым реестром жильцов, уже подтвердивших личность.
 
 ---
 
