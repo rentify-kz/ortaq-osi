@@ -18,6 +18,11 @@ const schema = z.object({
   SMTP_URL: z.string().min(1),
   MAIL_FROM: z.string().min(3),
   PASSWORD_BREACH_CHECK: z.enum(['hibp', 'off']).default('hibp'),
+  /** dev — заглушка SIGEX с тестовым сертификатом. В production подпись должна быть настоящей */
+  SIGNATURE_PROVIDER: z.enum(['dev', 'sigex']).default('dev'),
+}).refine((e) => !(e.NODE_ENV === 'production' && e.SIGNATURE_PROVIDER === 'dev'), {
+  path: ['SIGNATURE_PROVIDER'],
+  message: 'заглушка подписи запрещена в production',
 })
 
 export type Env = z.infer<typeof schema>

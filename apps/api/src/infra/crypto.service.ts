@@ -39,6 +39,11 @@ export class CryptoService {
     return bytes(createHmac('sha256', this.hmacKey).update(value).digest())
   }
 
+  /** Хеш ИИН для сверки с реестром без расшифровки (docs/14 §3). Одна функция для реестра и ЭЦП */
+  hashIin(iin: string): Uint8Array<ArrayBuffer> {
+    return this.hmac(`iin:${iin}`)
+  }
+
   /** Для высокоэнтропийных токенов (ссылки, refresh) хватает SHA-256 без соли */
   sha256(value: string): Uint8Array<ArrayBuffer> {
     return bytes(createHash('sha256').update(value).digest())

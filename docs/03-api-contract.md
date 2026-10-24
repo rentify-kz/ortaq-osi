@@ -213,6 +213,9 @@ API их не блокирует — иначе пришлось бы дубли
 | GET | `/verification/:id/status` | аутентиф. | `self` | нет | `read` | нет |
 | POST | `/verification/:id/complete` | аутентиф. | `self` | нет | `auth` | да |
 | POST | `/verification/:id/claim-unit` | аутентиф. | `self` | нет | `write` | да |
+| GET | `/houses/:id/ownerships/pending` | chairman | `house` | нет | `read` | нет |
+| POST | `/houses/:id/ownerships/:ownershipId/verify` | chairman | `house` | **да** | `write` | да |
+| POST | `/houses/:id/ownerships/:ownershipId/reject` | chairman | `house` | **да** | `write` | да |
 
 `POST /verification/start` создаёт процедуру подписания в SIGEX и возвращает QR и deeplink:
 
@@ -226,6 +229,10 @@ API их не блокирует — иначе пришлось бы дубли
 ```
 
 `POST /verification/:id/complete` вызывается после подписания. Сервер **сам** забирает подпись у SIGEX, проверяет её, извлекает ИИН и ФИО из сертификата и сверяет с `OwnerRegistryEntry`. Клиент не сообщает результат — он только говорит «я закончил».
+
+Ручное подтверждение собственности председателем (нет в реестре, расхождение ФИО) возможно только для жильца, чья личность уже подтверждена ЭЦП: иначе голос появился бы без идентификации по ст. 44.
+
+В разработке вместо SIGEX работает заглушка (`SIGNATURE_PROVIDER=dev`): QR и deeplink ведут на `/dev/egov#<id>` веб-приложения, где документ подписывается тестовым сертификатом с введёнными ИИН и ФИО (`GET/POST /dev/egov/:externalId[/sign]`). Сервер проверяет такую подпись тем же путём, что и настоящую. В production заглушка запрещена проверкой конфигурации, а её маршруты не регистрируются.
 
 ---
 

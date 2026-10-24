@@ -206,6 +206,33 @@ export type AcceptInviteBody = z.input<typeof acceptInviteBody>
 
 export const houseSearchQuery = z.object({ q: trimmed(3, 100) })
 
+/** Подтверждение личности через ЭЦП, docs/04 §7. Дом — для сверки с его реестром в первую очередь */
+export const startVerificationBody = z.object({ house_id: z.uuid().optional() })
+export type StartVerificationBody = z.infer<typeof startVerificationBody>
+
+export type VerificationOutcome = 'MATCHED' | 'MOVED' | 'NOT_IN_REGISTRY' | 'NAME_MISMATCH' | 'TENANT'
+
+export type VerificationStatusResponse = {
+  id: string
+  state: 'PENDING' | 'SIGNED' | 'FAILED' | 'EXPIRED'
+  expires_at: string
+  result: null | {
+    full_name: string
+    iin_masked: string
+    units: { house_id: string; unit_number: string; outcome: VerificationOutcome }[]
+  } | { error: string }
+}
+
+/** Заглушка eGov mobile в разработке: подпись тестовым сертификатом с введёнными ИИН и ФИО */
+export const devSignBody = z.object({
+  iin: z.string().trim().refine(isValidIinBin, 'Некорректный ИИН'),
+  full_name: trimmed(3, 200),
+})
+export type DevSignBody = z.infer<typeof devSignBody>
+
+export const rejectOwnershipBody = z.object({ reason: trimmed(3, 500) })
+export type RejectOwnershipBody = z.infer<typeof rejectOwnershipBody>
+
 /* ───────── ошибки ───────── */
 
 export type ApiError = { error: { code: string; message: string; details?: unknown } }

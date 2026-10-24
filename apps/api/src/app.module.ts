@@ -21,6 +21,20 @@ import { HousesController } from './modules/houses/houses.controller'
 import { ReadinessService } from './modules/houses/readiness.service'
 import { MembershipsController } from './modules/memberships/memberships.controller'
 import { MembershipsService } from './modules/memberships/memberships.service'
+import { DevEgovController } from './integrations/signature/dev-egov.controller'
+import { DevSignatureProvider } from './integrations/signature/dev-signature.provider'
+import { SIGNATURE_PROVIDER, type SignatureProvider } from './integrations/signature/signature.provider'
+import { OwnershipsController } from './modules/verification/ownerships.controller'
+import { OwnershipsService } from './modules/verification/ownerships.service'
+import { VerificationController } from './modules/verification/verification.controller'
+import { VerificationService } from './modules/verification/verification.service'
+
+/** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
+function signatureProvider(): SignatureProvider {
+  if (env().SIGNATURE_PROVIDER === 'dev') return new DevSignatureProvider()
+  throw new Error('SIGNATURE_PROVIDER=sigex: адаптер SIGEX ещё не подключён')
+}
+const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
 
 @Module({
   imports: [
@@ -30,11 +44,15 @@ import { MembershipsService } from './modules/memberships/memberships.service'
       verifyOptions: { algorithms: ['HS256'], issuer: 'ortaq' },
     }),
   ],
-  controllers: [AuthController, AdminController, HousesController, MembershipsController],
+  controllers: [
+    AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
+    ...(devStandIns ? [DevEgovController] : []),
+  ],
   providers: [
     PrismaService, CryptoService, MailerService, SmsService, RateLimiter, OtpService,
     AuditService, TokensService, PasswordService, TotpService, SessionsService, AuthService,
-    ReadinessService, AdminService, MembershipsService,
+    ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
+    { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RateLimitGuard },

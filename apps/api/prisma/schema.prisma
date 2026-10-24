@@ -176,7 +176,8 @@ model User {
   passwordHash        String?    @map("password_hash")
   fullName            String     @map("full_name")
   iinEncrypted        Bytes?     @map("iin_encrypted")
-  iinHash             Bytes?     @map("iin_hash")
+  /// Один ИИН — одна учётная запись: иначе один человек голосует дважды
+  iinHash             Bytes?     @unique @map("iin_hash")
   identityVerifiedAt  DateTime?  @map("identity_verified_at") @db.Timestamptz
   locale              Locale     @default(ru)
   /// TOTP-секрет, AES-256-GCM. Обязателен для админа, председателя, бухгалтера
@@ -233,6 +234,8 @@ model UnitOwnership {
   verificationMethod     VerificationMethod? @map("verification_method")
   verifiedAt             DateTime?           @map("verified_at") @db.Timestamptz
   verifiedBy             String?             @map("verified_by") @db.Uuid
+  /// Почему собственность ждёт председателя: нет в реестре, расхождение ФИО, причина отказа
+  verificationNote       String?             @map("verification_note")
   isVotingRepresentative Boolean             @default(false) @map("is_voting_representative")
   createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz
 

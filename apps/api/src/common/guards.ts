@@ -61,7 +61,7 @@ export class RateLimitGuard implements CanActivate {
     const cls = meta<RateClass>(this.reflector, RATE, context) ?? (req.method === 'GET' ? 'read' : 'write')
     // Для входа ключ — IP плюс идентификатор: перебор паролей одного человека и перебор людей с одного IP
     const body = (req.body ?? {}) as Record<string, unknown>
-    const identifier = typeof body.email === 'string' ? body.email : typeof body.phone === 'string' ? body.phone : ''
+    const identifier = typeof body.email === 'string' ? body.email : typeof body.phone === 'string' ? body.phone : (ctx().userId ?? '')
     const who = cls === 'auth' ? `${req.ip}|${identifier}` : (ctx().userId ?? req.ip ?? 'anon')
     const key = `${cls}:${req.route?.path ?? req.path}:${who}`
     if (!this.limiter.take(key, cls)) throw new AppError(429, ErrorCode.RATE_LIMITED, 'Слишком много попыток. Подождите немного')
