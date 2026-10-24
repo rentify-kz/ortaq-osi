@@ -3,6 +3,9 @@
 export const HouseRole = ['CHAIRMAN', 'ACCOUNTANT', 'WORKER', 'RESIDENT'] as const
 export type HouseRole = (typeof HouseRole)[number]
 
+export const Specialization = ['PLUMBER', 'ELECTRICIAN', 'CLEANER', 'YARD_KEEPER', 'HANDYMAN', 'SECURITY', 'ELEVATOR', 'OTHER'] as const
+export type Specialization = (typeof Specialization)[number]
+
 export const ManagementForm = ['OSI', 'PT'] as const
 export type ManagementForm = (typeof ManagementForm)[number]
 
@@ -57,5 +60,6 @@ export const ErrorCode = {
   REGISTRY_INVALID: 'REGISTRY_INVALID',
   IDENTITY_REQUIRED: 'IDENTITY_REQUIRED',
   OWNERSHIP_DECIDED: 'OWNERSHIP_DECIDED',
+  MEMBER_PROTECTED: 'MEMBER_PROTECTED',
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]

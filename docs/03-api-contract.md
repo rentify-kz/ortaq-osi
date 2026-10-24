@@ -198,6 +198,8 @@ API их не блокирует — иначе пришлось бы дубли
 | POST | `/houses/:id/members` | chairman | `house` | да | `write` | да |
 | DELETE | `/houses/:id/members/:userId` | chairman | `house` | да | `write` | да |
 
+`POST /houses/:id/members` добавляет только бухгалтера (по почте, с письмом для задания пароля и обязательной 2FA); работники вступают по персональной ссылке, жильцы — по ссылке или заявке. `DELETE` отзывает членство, закрывает собственность (`REJECTED`, право голоса пропадает) и отвязывает запись персонала; председателя меняет только админ платформы.
+
 **`GET /invites/resolve/:token`** — единственный эндпоинт, отдающий что-то о доме до аутентификации. Отдаёт **минимум**:
 
 ```json
@@ -418,10 +420,10 @@ API их не блокирует — иначе пришлось бы дубли
 |---|---|---|---|---|---|---|
 | GET | `/houses/:id/staff` | член дома | `house` | нет | `read` | нет |
 | POST | `/houses/:id/staff` | chairman | `house` | нет | `write` | да |
-| PATCH | `/staff/:id` | chairman | `house` | нет | `write` | да |
+| PATCH | `/houses/:id/staff/:staffId` | chairman | `house` | нет | `write` | да |
 | GET | `/houses/:id/contractors` | член дома | `house` | нет | `read` | нет |
 | POST | `/houses/:id/contractors` | chairman | `house` | нет | `write` | да |
-| PATCH | `/contractors/:id` | chairman | `house` | нет | `write` | да |
+| PATCH | `/houses/:id/contractors/:contractorId` | chairman | `house` | нет | `write` | да |
 
 Жилец видит только записи с `visible_to_residents = true` и без служебных полей (зарплата, паспортные данные). Это требование прозрачности — «чтобы этот персонал был виден жителям».
 

@@ -33,6 +33,10 @@ import { RegistryController } from './modules/registry/registry.controller'
 import { RegistryService } from './modules/registry/registry.service'
 import { UnitsController } from './modules/houses/units.controller'
 import { UnitsService } from './modules/houses/units.service'
+import { MembersController } from './modules/memberships/members.controller'
+import { MembersService } from './modules/memberships/members.service'
+import { StaffController } from './modules/staff/staff.controller'
+import { StaffService } from './modules/staff/staff.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -51,14 +55,14 @@ const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
   ],
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
-    UnitsController, RegistryController,
+    UnitsController, RegistryController, MembersController, StaffController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
     PrismaService, CryptoService, MailerService, SmsService, RateLimiter, OtpService,
     AuditService, TokensService, PasswordService, TotpService, SessionsService, AuthService,
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
-    RegistryMatcher, RegistryService, UnitsService,
+    RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up
     { provide: APP_GUARD, useClass: AuthGuard },

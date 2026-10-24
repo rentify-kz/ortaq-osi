@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { InviteRole, InviteType, ManagementForm, OwnershipRelation, UnitType } from './enums.js'
+import { InviteRole, InviteType, ManagementForm, OwnershipRelation, Specialization, UnitType } from './enums.js'
 import { isValidIinBin } from './iin.js'
 
 /* Схемы запросов фазы 0. JSON в snake_case, как в docs/03-api-contract.md */
@@ -282,6 +282,82 @@ export type RegistryPreview = {
   /** Первые строки без ИИН: ФИО, помещение, площадь — чтобы председатель узнал свой файл */
   sample: { row: number; unit_number: string; full_name: string; area: string | null }[]
 }
+
+/* ───────── участники, персонал, подрядчики ───────── */
+
+/** Бухгалтер входит по почте с 2FA, как председатель. Работники приходят по персональной ссылке */
+export const addMemberBody = z.object({
+  role: z.literal('ACCOUNTANT'),
+  email: z.email().trim().toLowerCase(),
+  full_name: trimmed(3, 200),
+})
+export type AddMemberBody = z.infer<typeof addMemberBody>
+
+/** Рабочий телефон: в отличие от входа по SMS, допустим и городской (727…, 7172…) */
+export function normalizeKzContactPhone(input: string): string | null {
+  let d = input.replace(/\D/g, '')
+  if (d.length === 11 && (d.startsWith('8') || d.startsWith('7'))) d = d.slice(1)
+  return /^7\d{9}$/.test(d) ? `+7${d}` : null
+}
+const contactPhone = z.string().transform((v, c) => {
+  const n = normalizeKzContactPhone(v)
+  if (!n) c.addIssue({ code: 'custom', message: 'Номер телефона Казахстана: +7 и 10 цифр' })
+  return n ?? ''
+})
+const specializations = z.array(z.enum(Specialization)).max(Specialization.length).default([])
+const optionalText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional()
+
+export const staffBody = z.object({
+  full_name: trimmed(3, 200),
+  position: trimmed(2, 100),
+  specializations,
+  phone_public: contactPhone.nullable().optional(),
+  work_schedule: optionalText(200),
+  visible_to_residents: z.boolean().default(true),
+})
+export type StaffBody = z.input<typeof staffBody>
+
+export const updateStaffBody = staffBody
+  .partial()
+  .extend({
+    specializations: z.array(z.enum(Specialization)).max(Specialization.length).optional(),
+    visible_to_residents: z.boolean().optional(),
+    is_active: z.boolean().optional(),
+    /** Связь с учёткой работника, вступившего по персональной ссылке */
+    user_id: z.uuid().nullable().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, 'Нечего менять')
+export type UpdateStaffBody = z.input<typeof updateStaffBody>
+
+const isoDate = z.iso.date()
+
+const contractorFields = z.object({
+  name: trimmed(2, 200),
+  bin: bin.nullable().optional(),
+  specializations,
+  contact_person: optionalText(200),
+  phone: contactPhone.nullable().optional(),
+  email: z.email().trim().toLowerCase().nullable().optional(),
+  contract_from: isoDate.nullable().optional(),
+  contract_to: isoDate.nullable().optional(),
+  visible_to_residents: z.boolean().default(true),
+})
+const contractDates = (b: { contract_from?: string | null; contract_to?: string | null }) =>
+  !b.contract_from || !b.contract_to || b.contract_from <= b.contract_to
+
+export const contractorBody = contractorFields.refine(contractDates, { message: 'Договор заканчивается раньше, чем начинается', path: ['contract_to'] })
+export type ContractorBody = z.input<typeof contractorBody>
+
+export const updateContractorBody = contractorFields
+  .partial()
+  .extend({
+    specializations: z.array(z.enum(Specialization)).max(Specialization.length).optional(),
+    visible_to_residents: z.boolean().optional(),
+    is_active: z.boolean().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, 'Нечего менять')
+  .refine(contractDates, { message: 'Договор заканчивается раньше, чем начинается', path: ['contract_to'] })
+export type UpdateContractorBody = z.input<typeof updateContractorBody>
 
 /* ───────── ошибки ───────── */
 
