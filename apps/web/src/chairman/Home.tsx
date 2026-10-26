@@ -25,7 +25,7 @@ export function Home() {
     <>
       <PageHead title={house.data?.display_name ?? 'Дом'} sub={house.data?.address} />
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        {readiness.isPending ? <Skeleton rows={6} /> : readiness.isError ? <ErrorNote>{readiness.error.message}</ErrorNote> : <Readiness data={readiness.data} />}
+        {readiness.isPending ? <Skeleton rows={6} /> : readiness.isError ? <ErrorNote>{readiness.error.message}</ErrorNote> : <Readiness data={readiness.data} links={chairman ? { areas: `/h/${houseId}/areas`, registry: `/h/${houseId}/registry`, residents: `/h/${houseId}/residents` } : {}} />}
         <div className="flex flex-col gap-6">
           {chairman && (
             <Card>

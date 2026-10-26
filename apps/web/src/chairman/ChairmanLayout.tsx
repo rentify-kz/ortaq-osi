@@ -1,11 +1,12 @@
 import { Outlet, useParams } from 'react-router'
-import { ClipboardCheck, Users } from 'lucide-react'
+import { ClipboardCheck, FileSpreadsheet, Megaphone, Ruler, UserRound, Users } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { MeResponse } from '@ortaq/shared'
 import { api } from '../shared/api/client'
 import { Shell } from '../shared/ui/Shell'
 
 type JoinRequestLite = { id: string }
+type PendingLite = { id: string }
 
 export function ChairmanLayout({ me }: { me: MeResponse }) {
   const { houseId = '' } = useParams()
@@ -16,16 +17,31 @@ export function ChairmanLayout({ me }: { me: MeResponse }) {
     queryFn: () => api<JoinRequestLite[]>(`/houses/${houseId}/join-requests?status=PENDING`),
     enabled: membership?.role === 'CHAIRMAN',
   })
+  const ownerships = useQuery({
+    queryKey: ['house', houseId, 'ownerships', 'pending'],
+    queryFn: () => api<PendingLite[]>(`/houses/${houseId}/ownerships/pending`),
+    enabled: membership?.role === 'CHAIRMAN',
+  })
+  const chairman = membership?.role === 'CHAIRMAN'
+  const waiting = (pending.data?.length ?? 0) + (ownerships.data?.length ?? 0)
+  // Бухгалтер не управляет жильцами, реестром и объявлениями (docs/06 §6.12): лишнего в меню не показываем
+  const items = [
+    { to: `/h/${houseId}`, label: 'Подготовка', icon: ClipboardCheck, end: true },
+    ...(chairman ? [
+      { to: `/h/${houseId}/residents`, label: 'Жильцы', icon: Users, badge: waiting || undefined },
+      { to: `/h/${houseId}/registry`, label: 'Реестр', icon: FileSpreadsheet },
+      { to: `/h/${houseId}/areas`, label: 'Площади', icon: Ruler },
+      { to: `/h/${houseId}/announcements`, label: 'Объявления', icon: Megaphone },
+    ] : []),
+    { to: `/h/${houseId}/staff`, label: 'Персонал', icon: UserRound },
+  ]
 
   return (
     <Shell
       id="chairman"
       caption={membership?.house_display_name ?? ''}
       user={{ name: me.full_name, role: membership?.role === 'ACCOUNTANT' ? 'бухгалтер' : 'председатель' }}
-      items={[
-        { to: `/h/${houseId}`, label: 'Подготовка', icon: ClipboardCheck, end: true },
-        { to: `/h/${houseId}/residents`, label: 'Жильцы', icon: Users, badge: pending.data?.length },
-      ]}
+      items={items}
     >
       <Outlet />
     </Shell>

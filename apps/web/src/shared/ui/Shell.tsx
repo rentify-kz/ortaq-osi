@@ -24,15 +24,16 @@ export function Shell({ id, caption, items, user, children }: {
           <span className="hidden truncate text-[14px] text-ink-2 lg:block">{caption}</span>
         </div>
 
-        <nav aria-label="Разделы" className="flex min-w-0 rounded-full bg-surface p-1">
+        {/* На телефоне подписи остаются только для читалок экрана; если пунктов больше, чем места, меню прокручивается, а не страница */}
+        <nav aria-label="Разделы" className="flex min-w-0 overflow-x-auto rounded-full bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {items.map((it) => (
-            <NavLink key={it.to} to={it.to} end={it.end} className="relative flex h-10 shrink-0 items-center rounded-full px-3 sm:px-4">
+            <NavLink key={it.to} to={it.to} end={it.end} className="relative flex h-10 min-w-10 shrink-0 items-center justify-center rounded-full px-2.5 sm:px-4">
               {({ isActive }) => (
                 <>
                   {isActive && <motion.span layoutId={`nav-${id}`} transition={spring} className="absolute inset-0 rounded-full bg-brand-600" />}
                   <span className={cn('relative flex items-center gap-2 text-[14px] font-semibold transition-colors', isActive ? 'text-white' : 'text-ink-2 hover:text-ink')}>
                     <it.icon size={17} strokeWidth={2.1} />
-                    <span className={cn(!isActive && 'hidden sm:inline')}>{it.label}</span>
+                    <span className={cn('sr-only sm:not-sr-only', !isActive && 'sm:sr-only lg:not-sr-only')}>{it.label}</span>
                     {it.badge ? (
                       <span className={cn('nums grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[11px] font-bold', isActive ? 'bg-white text-brand-700' : 'bg-danger text-white')}>
                         {it.badge}
@@ -46,7 +47,7 @@ export function Shell({ id, caption, items, user, children }: {
         </nav>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className="flex items-center gap-2 rounded-full bg-surface p-1 xl:pr-3">
+          <span className="hidden items-center gap-2 rounded-full bg-surface p-1 sm:flex xl:pr-3">
             <span className="grid size-9 place-items-center rounded-full bg-brand-100 font-display text-[13px] font-bold text-brand-700">{initials(user.name)}</span>
             <span className="hidden text-left leading-tight xl:block">
               <span className="block text-[13px] font-semibold text-ink">{user.name}</span>

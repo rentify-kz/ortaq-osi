@@ -1,12 +1,16 @@
 import { motion } from 'motion/react'
-import { Check, ClipboardCheck, TriangleAlert } from 'lucide-react'
+import { Link } from 'react-router'
+import { Check, ChevronRight, ClipboardCheck, TriangleAlert } from 'lucide-react'
 import type { ReadinessResponse } from '@ortaq/shared'
 import { cn, ease, plural } from '../lib/cn'
 import { Card, CardHead } from './kit'
 
-type Item = { done: boolean; label: string; value: string }
+type Item = { done: boolean; label: string; value: string; to?: string }
 
-function items(r: ReadinessResponse): Item[] {
+/** Куда вести председателя с незавершённого шага. У админа ссылок нет: это работа председателя */
+export type ReadinessLinks = { areas?: string; registry?: string; residents?: string }
+
+function items(r: ReadinessResponse, links: ReadinessLinks): Item[] {
   return [
     { done: r.units_generated, label: 'Помещения созданы', value: String(r.units_total) },
     {
@@ -14,12 +18,13 @@ function items(r: ReadinessResponse): Item[] {
       label: 'Председатель назначен',
       value: r.chairman_activated ? 'вошёл' : r.chairman_assigned ? 'ждём пароль и 2FA' : 'нет',
     },
-    { done: r.is_voting_ready, label: 'Площади помещений', value: `${r.areas_filled} из ${r.areas_total}` },
-    { done: r.registry_uploaded, label: 'Реестр собственников', value: r.registry_uploaded ? 'загружен' : 'не загружен' },
+    { done: r.is_voting_ready, label: 'Площади помещений', value: `${r.areas_filled} из ${r.areas_total}`, to: links.areas },
+    { done: r.registry_uploaded, label: 'Реестр собственников', value: r.registry_uploaded ? 'загружен' : 'не загружен', to: links.registry },
     {
       done: r.residents_joined > 0,
       label: 'Жильцы присоединились',
       value: `${r.residents_joined} ${plural(r.residents_joined, ['жилец', 'жильца', 'жильцов'])}`,
+      to: links.residents,
     },
   ]
 }
@@ -28,8 +33,8 @@ function items(r: ReadinessResponse): Item[] {
  * Чек-лист готовности дома (docs/04 §4): вместо пустого дашборда при первом входе.
  * Одна и та же картина у админа платформы и у председателя.
  */
-export function Readiness({ data, title = 'Подготовка дома' }: { data: ReadinessResponse; title?: string }) {
-  const list = items(data)
+export function Readiness({ data, title = 'Подготовка дома', links = {} }: { data: ReadinessResponse; title?: string; links?: ReadinessLinks }) {
+  const list = items(data, links)
   const done = list.filter((i) => i.done).length
   return (
     <Card>
@@ -47,13 +52,8 @@ export function Readiness({ data, title = 'Подготовка дома' }: { d
           <motion.li
             key={i.label}
             initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.04 * n, ease }}
-            className="flex items-center gap-3 rounded-[16px] bg-surface-2 px-4 py-3"
           >
-            <span className={cn('grid size-7 shrink-0 place-items-center rounded-full', i.done ? 'bg-brand-600 text-white' : 'bg-surface-3 text-transparent')}>
-              <Check size={15} strokeWidth={2.6} />
-            </span>
-            <span className={cn('flex-1 text-[15px]', i.done ? 'text-ink' : 'font-medium text-ink')}>{i.label}</span>
-            <span className={cn('nums text-[14px]', i.done ? 'text-ink-2' : 'font-semibold text-ink')}>{i.value}</span>
+            <ItemRow item={i} />
           </motion.li>
         ))}
       </ul>
@@ -68,5 +68,25 @@ export function Readiness({ data, title = 'Подготовка дома' }: { d
         </ul>
       )}
     </Card>
+  )
+}
+
+function ItemRow({ item: i }: { item: Item }) {
+  const body = (
+    <>
+      <span className={cn('grid size-7 shrink-0 place-items-center rounded-full', i.done ? 'bg-brand-600 text-white' : 'bg-surface-3 text-transparent')}>
+        <Check size={15} strokeWidth={2.6} />
+      </span>
+      <span className={cn('flex-1 text-[15px]', i.done ? 'text-ink' : 'font-medium text-ink')}>{i.label}</span>
+      <span className={cn('nums text-[14px]', i.done ? 'text-ink-2' : 'font-semibold text-ink')}>{i.value}</span>
+    </>
+  )
+  const cls = 'flex min-h-[52px] items-center gap-3 rounded-[16px] bg-surface-2 px-4 py-3'
+  if (!i.to) return <div className={cls}>{body}</div>
+  return (
+    <Link to={i.to} className={cn(cls, 'transition-colors hover:bg-surface-3')}>
+      {body}
+      <ChevronRight size={17} strokeWidth={2.2} className="-mr-1 text-ink-3" />
+    </Link>
   )
 }

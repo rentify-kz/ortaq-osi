@@ -7,7 +7,12 @@ import { Join } from '../auth/Join'
 import { Login } from '../auth/Login'
 import { SetPassword } from '../auth/SetPassword'
 import { Home } from '../chairman/Home'
+import { Announcements } from '../chairman/Announcements'
+import { Areas } from '../chairman/Areas'
+import { Registry } from '../chairman/Registry'
 import { Residents } from '../chairman/Residents'
+import { Staff } from '../chairman/Staff'
+import { DevEgov } from '../auth/DevEgov'
 import { AdminRoute, HomeRedirect, HouseRoute, NoAccess, Root } from './routes'
 
 export const router = createBrowserRouter([
@@ -18,6 +23,8 @@ export const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       { path: '/set-password', element: <SetPassword /> },
       { path: '/join', element: <Join /> },
+      // Заглушка eGov mobile: в сборке для production маршрута нет
+      ...(import.meta.env.DEV ? [{ path: '/dev/egov', element: <DevEgov /> }] : []),
       { path: '/no-access', element: <NoAccess /> },
       {
         path: '/admin',
@@ -36,6 +43,10 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Home /> },
           { path: 'residents', element: <Residents /> },
+          { path: 'registry', element: <Registry /> },
+          { path: 'areas', element: <Areas /> },
+          { path: 'announcements', element: <Announcements /> },
+          { path: 'staff', element: <Staff /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

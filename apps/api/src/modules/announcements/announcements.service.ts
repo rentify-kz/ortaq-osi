@@ -40,7 +40,7 @@ export class AnnouncementsService {
         : { deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }], AND: [{ OR: await this.visibleTo(tx, userId) }] }
       const rows = await tx.announcement.findMany({
         where,
-        include: { reads: { where: { userId }, select: { readAt: true } } },
+        include: { reads: { where: { userId }, select: { readAt: true } }, targets: isBoard() },
         orderBy: [{ isPinned: 'desc' }, { publishedAt: 'desc' }],
         take: LIST_LIMIT,
       })

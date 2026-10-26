@@ -55,7 +55,9 @@ type Options = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown }
 export async function api<T>(path: string, options: Options = {}, attempt = { refreshed: false, steppedUp: false }): Promise<T> {
   const { method = 'GET', body } = options
   const headers: Record<string, string> = {}
-  if (body !== undefined) headers['content-type'] = 'application/json'
+  // Файл уходит multipart: границу частей браузер ставит в заголовок сам
+  const form = body instanceof FormData
+  if (body !== undefined && !form) headers['content-type'] = 'application/json'
   if (stepUp && stepUp.until > Date.now()) headers['x-step-up-token'] = stepUp.token
 
   let res: Response
@@ -63,7 +65,7 @@ export async function api<T>(path: string, options: Options = {}, attempt = { re
     res = await fetch(`/v1${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       credentials: 'same-origin',
     })
   } catch {
