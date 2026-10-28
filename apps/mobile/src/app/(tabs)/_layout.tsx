@@ -2,7 +2,8 @@ import { forwardRef, type ComponentRef } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { TabList, TabSlot, TabTrigger, Tabs, type TabListProps, type TabTriggerSlotProps } from 'expo-router/ui'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Building2, House, UserRound, type LucideIcon } from 'lucide-react-native'
+import { Building2, ClipboardList, House, ListTodo, UserRound, type LucideIcon } from 'lucide-react-native'
+import { useHouse } from '../../lib/session'
 import { color, font, MAX_WIDTH, radius, space } from '../../theme'
 
 type TabButtonProps = TabTriggerSlotProps & { icon: LucideIcon; label: string }
@@ -35,13 +36,17 @@ function TabBar({ children, style, ...props }: TabListProps) {
   )
 }
 
+/** Вкладки по роли: у жильца — заявки, у работника — задачи (docs/07: интерфейс работника отдельный) */
 export default function TabsLayout() {
+  const worker = useHouse()?.role === 'WORKER'
   return (
     <Tabs>
       <TabSlot style={{ flex: 1 }} />
       <TabList asChild>
         <TabBar>
           <TabTrigger name="home" href="/home" asChild><TabButton icon={House} label="Главная" /></TabTrigger>
+          <TabTrigger name="requests" href="/requests" asChild style={worker ? { display: 'none' } : undefined}><TabButton icon={ClipboardList} label="Заявки" /></TabTrigger>
+          <TabTrigger name="tasks" href="/tasks" asChild style={worker ? undefined : { display: 'none' }}><TabButton icon={ListTodo} label="Задачи" /></TabTrigger>
           <TabTrigger name="house" href="/house" asChild><TabButton icon={Building2} label="Дом" /></TabTrigger>
           <TabTrigger name="profile" href="/profile" asChild><TabButton icon={UserRound} label="Профиль" /></TabTrigger>
         </TabBar>
