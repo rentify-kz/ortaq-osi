@@ -50,7 +50,7 @@ export class RequestsService {
         if (b.photo_file_ids.length > 0) {
           await this.db.run(async (tx) => {
             const ev = await tx.requestEvent.create({ data: { houseId: v.houseId, requestId: twin.id, actorId: v.userId, type: 'COMMENT', data: { text: 'Дополнительные фото', photo_file_ids: b.photo_file_ids } } })
-            await this.files.attach(tx, b.photo_file_ids, 'REQUEST_EVENT', ev.id, v.userId)
+            await this.files.attach(tx, b.photo_file_ids, 'REQUEST_EVENT', ev.id, v.userId, 'REQUEST_PHOTO')
           })
         }
         return { ...(await this.detail(twin.id)), merged: true }
@@ -74,7 +74,7 @@ export class RequestsService {
           prioritySetBy: v.board ? 'CHAIRMAN' : null, photoFileIds: b.photo_file_ids,
         },
       })
-      await this.files.attach(tx, b.photo_file_ids, 'REQUEST', r.id, v.userId)
+      await this.files.attach(tx, b.photo_file_ids, 'REQUEST', r.id, v.userId, 'REQUEST_PHOTO')
       await tx.requestEvent.create({ data: { houseId: v.houseId, requestId: r.id, actorId: v.userId, type: 'CREATED' } })
       await this.audit.append(tx, { action: 'request.create', entityType: 'Request', entityId: r.id, after: { number, category: r.category, location: r.locationType } })
       return r

@@ -45,7 +45,7 @@ export async function resetDb() {
   await owner.$executeRawUnsafe(
     'TRUNCATE audit_log, sessions, auth_tokens, otp_codes, consents, signatures, verifications, owner_registry_entries, registry_imports, ' +
       'announcement_reads, announcement_targets, announcements, staff_members, contractors, device_tokens, notifications, notification_preferences, ' +
-      'ai_jobs, task_completions, tasks, recurring_task_templates, request_followers, request_events, request_stages, requests, files, ' +
+      'transaction_documents, transactions, finance_accounts, ai_jobs, task_completions, tasks, recurring_task_templates, request_followers, request_events, request_stages, requests, files, ' +
       'join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
   )
 }
@@ -144,7 +144,7 @@ export async function photo(width = 640, height = 480): Promise<Buffer> {
 }
 
 /** Загрузка фото по полному пути: upload-url → «телефон» кладёт файл → finalize. Возвращает id */
-export async function uploadPhoto(t: TestApp, agent: ReturnType<typeof request.agent>, houseId: string, purpose: 'REQUEST_PHOTO' | 'TASK_PHOTO' = 'REQUEST_PHOTO') {
+export async function uploadPhoto(t: TestApp, agent: ReturnType<typeof request.agent>, houseId: string, purpose: 'REQUEST_PHOTO' | 'TASK_PHOTO' | 'FINANCE_DOCUMENT' = 'REQUEST_PHOTO') {
   const body = await photo()
   const res = await agent.post(`/v1/houses/${houseId}/files/upload-url`).send({ purpose, mime_type: 'image/jpeg', size_bytes: body.length, name: 'IMG_0001.jpg' })
   expect(res.status).toBe(201)
@@ -152,4 +152,18 @@ export async function uploadPhoto(t: TestApp, agent: ReturnType<typeof request.a
   const fin = await agent.post(`/v1/houses/${houseId}/files/${res.body.file_id}/finalize`)
   expect(fin.status).toBe(200)
   return res.body.file_id as string
+}
+
+/** Минимальный PDF, как его сохранил бы сканер или банк-клиент. extra — для подмешивания активного содержимого */
+export function pdf(extra = ''): Buffer {
+  return Buffer.from(`%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R${extra}>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n`, 'latin1')
+}
+
+/** Загрузка PDF финансового документа по полному пути. Возвращает ответ finalize */
+export async function uploadPdf(t: TestApp, agent: ReturnType<typeof request.agent>, houseId: string, body = pdf()) {
+  const res = await agent.post(`/v1/houses/${houseId}/files/upload-url`).send({ purpose: 'FINANCE_DOCUMENT', mime_type: 'application/pdf', size_bytes: body.length, name: 'Акт №12.pdf' })
+  expect(res.status).toBe(201)
+  t.storage.putAsClient(res.body.upload_url, body)
+  const fin = await agent.post(`/v1/houses/${houseId}/files/${res.body.file_id}/finalize`)
+  return { id: res.body.file_id as string, finalize: fin }
 }

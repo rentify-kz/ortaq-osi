@@ -145,7 +145,7 @@ export class RequestActionsService {
       const follower = await tx.requestFollower.count({ where: { requestId: id, userId } })
       if (!isBoardRole(role) && r.authorId !== userId && follower === 0) throw forbidden('Комментировать может автор заявки или присоединившийся к ней')
       const ev = await this.event(tx, r, 'COMMENT', { text: b.text, photo_file_ids: b.photo_file_ids })
-      await this.files.attach(tx, b.photo_file_ids, 'REQUEST_EVENT', ev.id, userId)
+      await this.files.attach(tx, b.photo_file_ids, 'REQUEST_EVENT', ev.id, userId, 'REQUEST_PHOTO')
     })
     return this.requests.activity(id)
   }

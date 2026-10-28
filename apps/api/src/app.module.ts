@@ -61,6 +61,11 @@ import { TasksService } from './modules/tasks/tasks.service'
 import { RecurringController } from './modules/recurring/recurring.controller'
 import { RecurringScheduler } from './modules/recurring/recurring.scheduler'
 import { RecurringService } from './modules/recurring/recurring.service'
+import { HeuristicMalwareScanner, MALWARE_SCANNER, UnavailableMalwareScanner } from './integrations/scanner/malware-scanner'
+import { AccountsService } from './modules/finance/accounts.service'
+import { CategoriesService } from './modules/finance/categories.service'
+import { BudgetCategoriesController, FinanceController } from './modules/finance/finance.controller'
+import { TransactionsService } from './modules/finance/transactions.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -85,6 +90,7 @@ function storageProviderFactory(): StorageProvider {
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
     AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController, RecurringController,
+    BudgetCategoriesController, FinanceController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -94,9 +100,12 @@ function storageProviderFactory(): StorageProvider {
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
     FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService, RecurringService, RecurringScheduler,
+    CategoriesService, AccountsService, TransactionsService,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },
+    // Антивирус для PDF. Эвристика — только в разработке и тестах; в продакшене до адаптера ClamAV PDF не принимается
+    { provide: MALWARE_SCANNER, useFactory: () => (env().NODE_ENV === 'production' ? new UnavailableMalwareScanner() : new HeuristicMalwareScanner()) },
     { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up
     { provide: APP_GUARD, useClass: AuthGuard },

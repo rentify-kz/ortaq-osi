@@ -146,6 +146,11 @@ model House {
   requests      Request[]
   tasks         Task[]
   recurring     RecurringTaskTemplate[]
+  accounts      FinanceAccount[]
+  transactions  Transaction[]
+
+  /// Счётчик номеров операций: «операция №12» в журнале и отчёте
+  transactionSeq Int @default(0) @map("transaction_seq")
 
   /// Счётчик номеров заявок дома: «заявка №47». Увеличивается в той же транзакции, что и вставка
   requestSeq Int @default(0) @map("request_seq")
@@ -606,7 +611,8 @@ model Contractor {
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
-  tasks Task[]
+  tasks        Task[]
+  transactions Transaction[]
 
   @@index([houseId])
   @@map("contractors")
@@ -664,6 +670,7 @@ model NotificationPreference {
 enum FilePurpose {
   REQUEST_PHOTO
   TASK_PHOTO
+  FINANCE_DOCUMENT
 }
 
 enum FileStatus {
@@ -989,4 +996,147 @@ model AiJob {
 
   @@index([houseId, type, createdAt])
   @@map("ai_jobs")
+}
+
+// ───────── Фаза 3: финансы (docs/10, docs/02 §8) ─────────
+
+enum BudgetSection {
+  BALANCE
+  INCOME
+  EXPENSE
+}
+
+enum AccountType {
+  CURRENT
+  SAVINGS
+}
+
+enum TxDirection {
+  IN
+  OUT
+}
+
+enum TransactionStatus {
+  DRAFT
+  CONFIRMED
+  VOIDED
+}
+
+enum DocumentKind {
+  RECEIPT
+  PAYMENT_ORDER
+  WORK_ACT
+  DEFECT_ACT
+  CONTRACT
+  PROTOCOL
+  OTHER
+}
+
+/// План счетов = строки официальной формы отчёта. Глобальный, наполняется миграцией
+model BudgetCategory {
+  code                     String           @id @db.VarChar(10)
+  parentCode               String?          @map("parent_code") @db.VarChar(10)
+  parent                   BudgetCategory?  @relation("BudgetTree", fields: [parentCode], references: [code])
+  children                 BudgetCategory[] @relation("BudgetTree")
+  section                  BudgetSection
+  order                    Int
+  /// Формулировка из приказа
+  nameRu                   String           @map("name_ru")
+  nameKk                   String?          @map("name_kk")
+  /// Короткое имя для интерфейса: «Обслуживание лифтов»
+  shortName                String           @map("short_name")
+  /// Можно ли проводить операции на этот код
+  isLeaf                   Boolean          @map("is_leaf")
+  /// false — наша детализация строки, которая в форме идёт без номера («в том числе: за услуги по …»)
+  inForm                   Boolean          @map("in_form")
+  allowedAccounts          AccountType[]    @map("allowed_accounts")
+  requiresContractor       Boolean          @default(false) @map("requires_contractor")
+  requiresAssemblyDecision Boolean          @default(false) @map("requires_assembly_decision")
+  /// Документы сверх чека или платёжки, без которых строка отчёта считается неподтверждённой
+  requiredDocuments        DocumentKind[]   @map("required_documents")
+  formVersion              String           @map("form_version")
+
+  transactions Transaction[]
+
+  @@map("budget_categories")
+}
+
+model FinanceAccount {
+  id                  String        @id @default(uuid(7)) @db.Uuid
+  houseId             String        @map("house_id") @db.Uuid
+  house               House         @relation(fields: [houseId], references: [id])
+  type                AccountType
+  bankName            String        @map("bank_name")
+  /// Только последние 4 цифры: полный счёт в системе не нужен и не хранится
+  accountNumberMasked String?       @map("account_number_masked")
+  openingBalance      Decimal       @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  /// Дата, на которую известен начальный остаток; операции раньше неё не принимаются
+  openedOn            DateTime      @map("opened_on") @db.Date
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  transactions        Transaction[]
+
+  @@unique([houseId, type])
+  @@map("finance_accounts")
+}
+
+/// Проведённая операция не меняется и не удаляется — это держит триггер в базе, а не только сервис
+model Transaction {
+  id             String                @id @default(uuid(7)) @db.Uuid
+  houseId        String                @map("house_id") @db.Uuid
+  house          House                 @relation(fields: [houseId], references: [id])
+  number         Int
+  accountId      String                @map("account_id") @db.Uuid
+  account        FinanceAccount        @relation(fields: [accountId], references: [id])
+  categoryCode   String                @map("category_code") @db.VarChar(10)
+  category       BudgetCategory        @relation(fields: [categoryCode], references: [code])
+  direction      TxDirection
+  amount         Decimal               @db.Decimal(14, 2)
+  occurredOn     DateTime              @map("occurred_on") @db.Date
+  /// YYYY-MM: отчётный месяц, может отличаться от даты операции
+  period         String                @db.VarChar(7)
+  description    String
+  contractorId   String?               @map("contractor_id") @db.Uuid
+  contractor     Contractor?           @relation(fields: [contractorId], references: [id])
+  /// Плательщик или получатель, если это не подрядчик из справочника: «Казахтелеком», «Аренда 1 этажа»
+  counterparty   String?
+  status         TransactionStatus     @default(DRAFT)
+  idempotencyKey String                @map("idempotency_key")
+  /// SHA-256 тела запроса: тот же ключ с другим телом — конфликт, а не тихий повтор
+  requestHash    Bytes                 @map("request_hash")
+  createdBy      String                @map("created_by") @db.Uuid
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  confirmedBy    String?               @map("confirmed_by") @db.Uuid
+  confirmedAt    DateTime?             @map("confirmed_at") @db.Timestamptz
+  voidedBy       String?               @map("voided_by") @db.Uuid
+  voidedAt       DateTime?             @map("voided_at") @db.Timestamptz
+  voidReason     String?               @map("void_reason")
+  /// Исправленная запись указывает на аннулированную: в журнале видно, что чем заменено
+  correctsId     String?               @unique @map("corrects_id") @db.Uuid
+  corrects       Transaction?          @relation("Correction", fields: [correctsId], references: [id])
+  correctedBy    Transaction?          @relation("Correction")
+  documents      TransactionDocument[]
+
+  @@unique([houseId, idempotencyKey])
+  @@unique([houseId, number])
+  @@index([houseId, period])
+  @@index([accountId, status])
+  @@map("transactions")
+}
+
+/// Подтверждающий документ операции. Удаление мягкое: изъятие документа из отчётности тоже след
+model TransactionDocument {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  houseId       String       @map("house_id") @db.Uuid
+  transactionId String       @map("transaction_id") @db.Uuid
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
+  fileId        String       @unique @map("file_id") @db.Uuid
+  kind          DocumentKind
+  addedBy       String       @map("added_by") @db.Uuid
+  addedAt       DateTime     @default(now()) @map("added_at") @db.Timestamptz
+  removedBy     String?      @map("removed_by") @db.Uuid
+  removedAt     DateTime?    @map("removed_at") @db.Timestamptz
+
+  @@index([transactionId])
+  @@map("transaction_documents")
 }

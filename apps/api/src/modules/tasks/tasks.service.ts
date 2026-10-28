@@ -213,7 +213,7 @@ export class TasksService {
       const c = await tx.taskCompletion.create({
         data: { houseId: t.houseId, taskId: id, clientKey: b.client_key ?? null, completedBy: userId, note: b.note ?? null, photoFileIds: b.photo_file_ids, completedAt: at },
       })
-      await this.files.attach(tx, b.photo_file_ids, 'TASK_COMPLETION', c.id, userId)
+      await this.files.attach(tx, b.photo_file_ids, 'TASK_COMPLETION', c.id, userId, 'TASK_PHOTO')
       const cancelled = t.status === 'CANCELLED' || t.status === 'EXPIRED'
       await tx.task.update({ where: { id }, data: { status: 'SUBMITTED', startedAt: t.startedAt ?? at } })
       if (t.requestId) await this.requests.event(tx, { id: t.requestId, houseId: t.houseId }, 'WORK_SUBMITTED', { task: t.title, photos: b.photo_file_ids.length }, false)

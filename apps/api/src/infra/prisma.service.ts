@@ -20,6 +20,7 @@ const HOUSE_SCOPED = new Set<string>([
   'Unit', 'HouseMembership', 'UnitOwnership', 'Invite', 'JoinRequest',
   'OwnerRegistryEntry', 'RegistryImport', 'Announcement', 'AnnouncementTarget', 'AnnouncementRead', 'StaffMember', 'Contractor',
   'File', 'Request', 'RequestStage', 'RequestEvent', 'RequestFollower', 'Task', 'TaskCompletion', 'RecurringTaskTemplate',
+  'FinanceAccount', 'Transaction', 'TransactionDocument',
 ])
 
 const WHERE_OPERATIONS = new Set<string>([

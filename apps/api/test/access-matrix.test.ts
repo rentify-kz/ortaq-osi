@@ -19,6 +19,8 @@ let staffId = ''
 let contractorId = ''
 let announcementId = ''
 let requestId = ''
+let accountId = ''
+let transactionId = ''
 const agents = {} as Record<Role | 'OUTSIDER', ReturnType<typeof request.agent>>
 
 beforeAll(async () => {
@@ -34,6 +36,14 @@ beforeAll(async () => {
   contractorId = (await owner.contractor.create({ data: { houseId, name: 'ТОО Лифт' } })).id
   announcementId = (await owner.announcement.create({ data: { houseId, authorId: chairman.id, title: 'Тест', body: 'Текст', audience: 'ALL' } })).id
   requestId = (await owner.request.create({ data: { houseId, number: 1, authorId: chairman.id, title: 'Течь', description: 'Течь в подвале', category: 'PLUMBING', locationType: 'BASEMENT', status: 'TRIAGE' } })).id
+
+  accountId = (await owner.financeAccount.create({ data: { houseId, type: 'CURRENT', bankName: 'Halyk Bank', openedOn: new Date('2026-01-01') } })).id
+  transactionId = (await owner.transaction.create({
+    data: {
+      houseId, number: 1, accountId, categoryCode: '6.1', direction: 'IN', amount: 1000, occurredOn: new Date('2026-02-01'), period: '2026-02',
+      description: 'Взносы', status: 'CONFIRMED', confirmedAt: new Date(), idempotencyKey: 'matrix-key-1', requestHash: Buffer.alloc(32), createdBy: chairman.id,
+    },
+  })).id
 
   agents.CHAIRMAN = await login(t, chairman)
   agents.ACCOUNTANT = await login(t, accountant)
@@ -84,6 +94,17 @@ const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => strin
   ['post', () => `/houses/${houseId}/requests/${requestId}/merge`, CHAIR],
   ['post', () => `/houses/${houseId}/requests/${requestId}/ai/suggest`, CHAIR],
   ['post', () => `/houses/${houseId}/files/upload-url`, ALL],
+  ['get', () => `/houses/${houseId}/accounts`, BOARD],
+  ['post', () => `/houses/${houseId}/accounts`, CHAIR],
+  ['patch', () => `/houses/${houseId}/accounts/${accountId}`, CHAIR],
+  ['get', () => `/houses/${houseId}/transactions`, ALL],
+  ['get', () => `/houses/${houseId}/transactions/${transactionId}`, ALL],
+  ['post', () => `/houses/${houseId}/transactions`, BOARD],
+  ['patch', () => `/houses/${houseId}/transactions/${transactionId}`, BOARD],
+  ['post', () => `/houses/${houseId}/transactions/${transactionId}/confirm`, CHAIR],
+  ['post', () => `/houses/${houseId}/transactions/${transactionId}/void`, BOARD],
+  ['post', () => `/houses/${houseId}/transactions/${transactionId}/documents`, BOARD],
+  ['post', () => `/houses/${houseId}/transactions/${transactionId}/documents/${crypto.randomUUID()}/remove`, BOARD],
 ]
 
 describe('access matrix', () => {
