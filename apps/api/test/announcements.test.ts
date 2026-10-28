@@ -45,14 +45,14 @@ describe('announcements', () => {
     const h = await house()
     const post = (body: object) => h.chair.post(`/v1/houses/${h.house.id}/announcements`).send({ body: 'Текст объявления', ...body })
 
-    expect((await post({ title: 'Всем жильцам', audience: 'ALL' })).body.recipients).toBe(2)
+    expect((await post({ title: 'Всем жильцам', audience: 'ALL' })).body.recipients).toBe(3)
     expect((await post({ title: 'Персоналу', audience: 'STAFF' })).body.recipients).toBe(1)
     expect((await post({ title: 'Первому подъезду', audience: 'ENTRANCE', entrances: [1] })).body.recipients).toBe(1)
     expect((await post({ title: 'Лично второму', audience: 'SPECIFIC_USERS', user_ids: [h.second.id] })).body.recipients).toBe(1)
 
     expect(await titles(h.first.agent, h.house.id)).toEqual(['Всем жильцам', 'Первому подъезду'])
     expect(await titles(h.second.agent, h.house.id)).toEqual(['Всем жильцам', 'Лично второму'])
-    expect(await titles(h.worker.agent, h.house.id)).toEqual(['Персоналу'])
+    expect(await titles(h.worker.agent, h.house.id)).toEqual(['Всем жильцам', 'Персоналу'])
     expect(await titles(h.chair, h.house.id)).toHaveLength(4)
   })
 
@@ -71,12 +71,12 @@ describe('announcements', () => {
     const res = await h.chair.post(`/v1/houses/${h.house.id}/announcements`).send({ title: 'Отключение воды', body: 'Завтра с 10:00 до 14:00', audience: 'ALL' })
 
     const queued = await owner.notification.findMany({ where: { category: 'ANNOUNCEMENTS' } })
-    expect(queued.map((n) => n.userId).sort()).toEqual([h.first.id, h.second.id].sort())
+    expect(queued.map((n) => n.userId).sort()).toEqual([h.first.id, h.second.id, h.worker.id].sort())
     expect(queued.every((n) => n.priority === 'NORMAL' && n.channels.includes('push'))).toBe(true)
 
     // Ночью NORMAL ждёт утра; время отправки проверяем напрямую, чтобы тест не зависел от часов
     await owner.notification.updateMany({ data: { scheduledFor: new Date(Date.now() - 1000) } })
-    expect(await t.dispatcher.dispatchDue()).toBe(2)
+    expect(await t.dispatcher.dispatchDue()).toBe(3)
     expect(t.push.outbox).toEqual([{
       tokens: ['device-token-first-0001'],
       message: { title: 'Отключение воды', body: 'Завтра с 10:00 до 14:00', data: { notification_id: expect.any(String), category: 'ANNOUNCEMENTS' } },
@@ -105,17 +105,15 @@ describe('announcements', () => {
 
     const stats = await h.chair.get(`/v1/houses/${h.house.id}/announcements/${id}/stats`)
     expect(stats.body).toEqual({
-      recipients: 2, read: 1, percent: 50,
-      by_entrance: [{ entrance: 1, recipients: 1, read: 1 }, { entrance: 2, recipients: 1, read: 0 }],
+      recipients: 3, read: 1, percent: 33,
+      by_entrance: [{ entrance: 1, recipients: 1, read: 1 }, { entrance: 2, recipients: 1, read: 0 }, { entrance: null, recipients: 1, read: 0 }],
     })
     expect((await h.first.agent.get(`/v1/houses/${h.house.id}/announcements`)).body[0].is_read).toBe(true)
 
-    // Объявление не адресовано работнику: отметить прочтение он не может
-    expect((await h.worker.agent.post(`/v1/houses/${h.house.id}/announcements/${id}/read`)).status).toBe(404)
 
     await owner.notification.deleteMany()
-    expect((await h.chair.post(`/v1/houses/${h.house.id}/announcements/${id}/remind`)).body).toEqual({ reminded: 1 })
-    expect((await owner.notification.findMany()).map((n) => n.userId)).toEqual([h.second.id])
+    expect((await h.chair.post(`/v1/houses/${h.house.id}/announcements/${id}/remind`)).body).toEqual({ reminded: 2 })
+    expect((await owner.notification.findMany()).map((n) => n.userId).sort()).toEqual([h.second.id, h.worker.id].sort())
     expect((await h.chair.post(`/v1/houses/${h.house.id}/announcements/${id}/remind`)).status).toBe(429)
   })
 

@@ -49,6 +49,12 @@ import { MemoryStorageProvider } from './integrations/storage/memory-storage.pro
 import { S3StorageProvider } from './integrations/storage/s3-storage.provider'
 import { STORAGE_PROVIDER, type StorageProvider } from './integrations/storage/storage.provider'
 import { DevStorageBootstrap } from './integrations/storage/dev-storage.bootstrap'
+import { AI_PROVIDER } from './integrations/ai/ai.provider'
+import { AiService } from './integrations/ai/ai.service'
+import { RulesAiProvider } from './integrations/ai/rules-ai.provider'
+import { RequestsController } from './modules/requests/requests.controller'
+import { RequestsService } from './modules/requests/requests.service'
+import { RequestActionsService } from './modules/requests/request-actions.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -72,7 +78,7 @@ function storageProviderFactory(): StorageProvider {
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
-    AnnouncementsController, NotificationsController, FilesController,
+    AnnouncementsController, NotificationsController, FilesController, RequestsController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -81,7 +87,9 @@ function storageProviderFactory(): StorageProvider {
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
-    FilesService, DevStorageBootstrap,
+    FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService,
+    // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
+    { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },
     { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up

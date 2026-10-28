@@ -184,7 +184,8 @@ export class AnnouncementsService {
     const entranceOf = (m: (typeof members)[number]) => m.user.ownerships.map((o) => o.unit.entrance).find((e) => e !== null) ?? null
     const pick = (m: (typeof members)[number]): boolean => {
       switch (a.audience) {
-        case 'ALL': return m.role === 'RESIDENT'
+        // Общедомовые — и персоналу: об отключении воды работник должен знать (docs/07 §7.4)
+        case 'ALL': return m.role === 'RESIDENT' || m.role === 'WORKER'
         case 'STAFF': return m.role === 'WORKER'
         case 'SPECIFIC_USERS': return targets.some((t) => t.userId === m.userId)
         case 'ENTRANCE': {
@@ -211,7 +212,7 @@ export class AnnouncementsService {
     const entrances = [...new Set(ownerships.map((o) => o.unit.entrance).filter((e): e is number => e !== null))]
     const filters: Prisma.AnnouncementWhereInput[] = [{ audience: 'SPECIFIC_USERS', targets: { some: { houseId, userId } } }]
     if (role === 'RESIDENT') filters.push({ audience: 'ALL' })
-    if (role === 'WORKER') filters.push({ audience: 'STAFF' })
+    if (role === 'WORKER') filters.push({ audience: 'STAFF' }, { audience: 'ALL' })
     if (role === 'RESIDENT' && entrances.length > 0) filters.push({ audience: 'ENTRANCE', targets: { some: { houseId, entrance: { in: entrances } } } })
     return filters
   }

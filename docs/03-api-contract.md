@@ -243,23 +243,30 @@ API их не блокирует — иначе пришлось бы дубли
 
 ## 8. Заявки
 
+Пути под домом (`/houses/:id/requests/...`): членство проверяется до обращения к заявке.
+
 | Метод | Путь | Роль | Скоуп | Step-up | Лимит | Аудит |
 |---|---|---|---|---|---|---|
 | GET | `/houses/:id/requests` | член дома | `house` | нет | `read` | нет |
-| POST | `/houses/:id/requests` | член дома | `house` | нет | `write` | да |
-| GET | `/requests/:id` | член дома | `house` | нет | `read` | нет |
-| PATCH | `/requests/:id` | chairman, автор | `house` | нет | `write` | да |
-| POST | `/requests/:id/accept` | chairman | `house` | нет | `write` | да |
-| POST | `/requests/:id/reject` | chairman | `house` | нет | `write` | да |
-| POST | `/requests/:id/merge` | chairman | `house` | нет | `write` | да |
-| POST | `/requests/:id/stages` | chairman | `house` | нет | `write` | да |
-| PATCH | `/stages/:id` | chairman, исполнитель | `house` | нет | `write` | да |
-| POST | `/requests/:id/ai/suggest` | chairman | `house` | нет | `ai` | да |
-| GET | `/requests/:id/activity` | член дома | `house` | нет | `read` | нет |
+| POST | `/houses/:id/requests` | жилец, правление | `house` | нет | `write` | да |
+| GET | `/houses/:id/requests/:requestId` | член дома | `house` | нет | `read` | нет |
+| GET | `/houses/:id/requests/:requestId/activity` | член дома | `house` | нет | `read` | нет |
+| PATCH | `/houses/:id/requests/:requestId` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/accept` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/reject` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/merge` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/close` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/ai/suggest` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/cancel` | автор | `house` | нет | `write` | да |
+| POST | `/houses/:id/requests/:requestId/follow` | жилец | `house` | нет | `write` | нет |
+| POST | `/houses/:id/requests/:requestId/comments` | автор, присоединившийся, правление | `house` | нет | `write` | нет |
+| POST | `/houses/:id/requests/:requestId/rate` | автор | `house` | нет | `write` | нет |
 
-`GET /houses/:id/requests` фильтруется по роли: жилец видит свои заявки и все заявки по общему имуществу; заявки соседей про их квартиры ему не видны.
+Видимость: жилец видит свои заявки, те, к которым присоединился, и все по общему имуществу; заявки соседей про их квартиры ему не видны. Работник видит только заявки, по которым у него задача. Фото заявки наследуют это правило.
 
-Сортировка по умолчанию: `priority DESC, created_at DESC` — срочные вверху, как требовалось.
+Сортировка: `priority` от `CRITICAL` к `LOW`, затем `created_at DESC` — срочные вверху.
+
+Подача: точный дубликат от того же автора в течение часа склеивается с первой заявкой (`merged: true`). Иначе заявка получает номер в доме и статус `TRIAGE`, проходит триаж (кандидаты в дубли по локации + подсказка модели через слой обезличивания) и ждёт решения председателя. ИИ ничего не отклоняет: ставит предложенный приоритет и пометки `NEEDS_CLARIFICATION`, `SUSPICIOUS`, `POSSIBLE_DUPLICATE`; при отказе модели — `NO_AUTOCHECK` и `NORMAL`. Заявка председателя триаж пропускает. Модель в разработке — правила с тем же контрактом (`RulesAiProvider`), каждый вызов пишется в `ai_jobs`, решение председателя по подсказке — в `human_decision`.
 
 ---
 

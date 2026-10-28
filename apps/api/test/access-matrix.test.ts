@@ -18,6 +18,7 @@ let unitId = ''
 let staffId = ''
 let contractorId = ''
 let announcementId = ''
+let requestId = ''
 const agents = {} as Record<Role | 'OUTSIDER', ReturnType<typeof request.agent>>
 
 beforeAll(async () => {
@@ -32,6 +33,7 @@ beforeAll(async () => {
   staffId = (await owner.staffMember.create({ data: { houseId, fullName: 'Петров Иван', position: 'Дворник' } })).id
   contractorId = (await owner.contractor.create({ data: { houseId, name: 'ТОО Лифт' } })).id
   announcementId = (await owner.announcement.create({ data: { houseId, authorId: chairman.id, title: 'Тест', body: 'Текст', audience: 'ALL' } })).id
+  requestId = (await owner.request.create({ data: { houseId, number: 1, authorId: chairman.id, title: 'Течь', description: 'Течь в подвале', category: 'PLUMBING', locationType: 'BASEMENT', status: 'TRIAGE' } })).id
 
   agents.CHAIRMAN = await login(t, chairman)
   agents.ACCOUNTANT = await login(t, accountant)
@@ -74,6 +76,14 @@ const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => strin
   ['post', () => `/houses/${houseId}/announcements`, CHAIR],
   ['patch', () => `/houses/${houseId}/announcements/${announcementId}`, CHAIR],
   ['get', () => `/houses/${houseId}/announcements/${announcementId}/stats`, CHAIR],
+  ['get', () => `/houses/${houseId}/requests`, ALL],
+  ['post', () => `/houses/${houseId}/requests`, ['CHAIRMAN', 'ACCOUNTANT', 'RESIDENT']],
+  ['patch', () => `/houses/${houseId}/requests/${requestId}`, CHAIR],
+  ['post', () => `/houses/${houseId}/requests/${requestId}/accept`, CHAIR],
+  ['post', () => `/houses/${houseId}/requests/${requestId}/reject`, CHAIR],
+  ['post', () => `/houses/${houseId}/requests/${requestId}/merge`, CHAIR],
+  ['post', () => `/houses/${houseId}/requests/${requestId}/ai/suggest`, CHAIR],
+  ['post', () => `/houses/${houseId}/files/upload-url`, ALL],
 ]
 
 describe('access matrix', () => {
