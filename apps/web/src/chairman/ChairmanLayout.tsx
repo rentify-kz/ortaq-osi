@@ -1,5 +1,5 @@
 import { Outlet, useParams } from 'react-router'
-import { ClipboardCheck, FileSpreadsheet, Megaphone, Ruler, UserRound, Users } from 'lucide-react'
+import { ClipboardCheck, ClipboardList, FileSpreadsheet, ListTodo, Megaphone, Ruler, UserRound, Users } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { MeResponse } from '@ortaq/shared'
 import { api } from '../shared/api/client'
@@ -22,12 +22,20 @@ export function ChairmanLayout({ me }: { me: MeResponse }) {
     queryFn: () => api<PendingLite[]>(`/houses/${houseId}/ownerships/pending`),
     enabled: membership?.role === 'CHAIRMAN',
   })
+  // Счётчик на «Заявках»: новые, которые ждут решения председателя
+  const triage = useQuery({
+    queryKey: ['house', houseId, 'requests', 'all'],
+    queryFn: () => api<{ status: string }[]>(`/houses/${houseId}/requests?status=open`),
+    enabled: membership?.role === 'CHAIRMAN',
+  })
   const chairman = membership?.role === 'CHAIRMAN'
   const waiting = (pending.data?.length ?? 0) + (ownerships.data?.length ?? 0)
   // Бухгалтер не управляет жильцами, реестром и объявлениями (docs/06 §6.12): лишнего в меню не показываем
   const items = [
     { to: `/h/${houseId}`, label: 'Подготовка', icon: ClipboardCheck, end: true },
     ...(chairman ? [
+      { to: `/h/${houseId}/requests`, label: 'Заявки', icon: ClipboardList, badge: triage.data?.filter((r) => r.status === 'TRIAGE').length || undefined },
+      { to: `/h/${houseId}/tasks`, label: 'Задачи', icon: ListTodo },
       { to: `/h/${houseId}/residents`, label: 'Жильцы', icon: Users, badge: waiting || undefined },
       { to: `/h/${houseId}/registry`, label: 'Реестр', icon: FileSpreadsheet },
       { to: `/h/${houseId}/areas`, label: 'Площади', icon: Ruler },

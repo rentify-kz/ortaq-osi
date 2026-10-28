@@ -12,6 +12,9 @@ import { Areas } from '../chairman/Areas'
 import { Registry } from '../chairman/Registry'
 import { Residents } from '../chairman/Residents'
 import { Staff } from '../chairman/Staff'
+import { Requests } from '../chairman/Requests'
+import { RequestDetail } from '../chairman/RequestDetail'
+import { Tasks } from '../chairman/Tasks'
 import { DevEgov } from '../auth/DevEgov'
 import { AdminRoute, HomeRedirect, HouseRoute, NoAccess, Root } from './routes'
 
@@ -47,6 +50,9 @@ export const router = createBrowserRouter([
           { path: 'areas', element: <Areas /> },
           { path: 'announcements', element: <Announcements /> },
           { path: 'staff', element: <Staff /> },
+          { path: 'requests', element: <Requests /> },
+          { path: 'requests/:requestId', element: <RequestDetail /> },
+          { path: 'tasks', element: <Tasks /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },
