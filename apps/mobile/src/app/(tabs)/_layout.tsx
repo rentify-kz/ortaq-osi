@@ -45,8 +45,9 @@ export default function TabsLayout() {
       <TabList asChild>
         <TabBar>
           <TabTrigger name="home" href="/home" asChild><TabButton icon={House} label="Главная" /></TabTrigger>
-          <TabTrigger name="requests" href="/requests" asChild style={worker ? { display: 'none' } : undefined}><TabButton icon={ClipboardList} label="Заявки" /></TabTrigger>
-          <TabTrigger name="tasks" href="/tasks" asChild style={worker ? undefined : { display: 'none' }}><TabButton icon={ListTodo} label="Задачи" /></TabTrigger>
+          {worker
+            ? <TabTrigger name="tasks" href="/tasks" asChild><TabButton icon={ListTodo} label="Задачи" /></TabTrigger>
+            : <TabTrigger name="requests" href="/requests" asChild><TabButton icon={ClipboardList} label="Заявки" /></TabTrigger>}
           <TabTrigger name="house" href="/house" asChild><TabButton icon={Building2} label="Дом" /></TabTrigger>
           <TabTrigger name="profile" href="/profile" asChild><TabButton icon={UserRound} label="Профиль" /></TabTrigger>
         </TabBar>

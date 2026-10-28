@@ -63,7 +63,12 @@ export class AuthController {
     return this.respond(await this.auth.verifyTwoFactor(body.challenge, body.code), req, res)
   }
 
-  @Public() @Rate('auth') @Post('auth/refresh') @HttpCode(200)
+  /**
+   * Не класс auth: refresh-токен — 256 бит случайности, перебирать нечего, а 5 обновлений
+   * за 15 минут с одного адреса выбрасывали из сессии всех за одним NAT. Кражу ловит
+   * повторное предъявление токена (отзыв всей цепочки), а не лимит.
+   */
+  @Public() @Rate('write') @Post('auth/refresh') @HttpCode(200)
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const presented = isMobile(req)
       ? (req.body as { refresh_token?: string } | undefined)?.refresh_token

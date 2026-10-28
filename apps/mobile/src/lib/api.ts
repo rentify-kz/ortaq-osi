@@ -56,7 +56,8 @@ export function refresh(): Promise<boolean> {
         body: JSON.stringify({ refresh_token: presented }),
       })
       if (!res.ok) {
-        await clearTokens()
+        // Сессию гасим, только если сервер её не признал; лимит запросов или сбой — не повод выходить
+        if (res.status === 401 || res.status === 403) await clearTokens()
         return false
       }
       await saveTokens((await res.json()) as Tokens)
