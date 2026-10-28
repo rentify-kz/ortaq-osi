@@ -12,6 +12,8 @@ import { MailerService } from '../src/infra/mailer.service'
 import { SmsService } from '../src/infra/sms.service'
 import { PushService } from '../src/infra/push.service'
 import { NotificationsDispatcher } from '../src/modules/notifications/notifications.dispatcher'
+import { MemoryStorageProvider } from '../src/integrations/storage/memory-storage.provider'
+import { STORAGE_PROVIDER } from '../src/integrations/storage/storage.provider'
 import { TotpService } from '../src/modules/auth/totp.service'
 import { generateUnits } from '../src/modules/admin/units.generator'
 
@@ -25,6 +27,7 @@ export const totp = new TotpService()
 
 export type TestApp = {
   app: NestExpressApplication; mailer: MailerService; sms: SmsService; push: PushService; dispatcher: NotificationsDispatcher; limiter: RateLimiter
+  storage: MemoryStorageProvider
 }
 
 export async function createApp(): Promise<TestApp> {
@@ -34,7 +37,7 @@ export async function createApp(): Promise<TestApp> {
   await app.init()
   return {
     app, mailer: app.get(MailerService), sms: app.get(SmsService), push: app.get(PushService),
-    dispatcher: app.get(NotificationsDispatcher), limiter: app.get(RateLimiter),
+    dispatcher: app.get(NotificationsDispatcher), limiter: app.get(RateLimiter), storage: app.get(STORAGE_PROVIDER),
   }
 }
 
@@ -42,6 +45,7 @@ export async function resetDb() {
   await owner.$executeRawUnsafe(
     'TRUNCATE audit_log, sessions, auth_tokens, otp_codes, consents, signatures, verifications, owner_registry_entries, registry_imports, ' +
       'announcement_reads, announcement_targets, announcements, staff_members, contractors, device_tokens, notifications, notification_preferences, ' +
+      'ai_jobs, task_completions, tasks, recurring_task_templates, request_followers, request_events, request_stages, requests, files, ' +
       'join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
   )
 }
@@ -128,4 +132,24 @@ export async function phoneLogin(t: TestApp, phone: string) {
   const res = await agent.post('/v1/auth/otp/verify').send({ phone, code })
   expect(res.status).toBe(200)
   return { agent, body: res.body as { is_new: boolean; user: { id: string; full_name: string } } }
+}
+
+/** Фото, как его прислал бы телефон: JPEG с EXIF (в нём у настоящего телефона — GPS) */
+export async function photo(width = 640, height = 480): Promise<Buffer> {
+  const sharp = (await import('sharp')).default
+  return sharp({ create: { width, height, channels: 3, background: { r: 120, g: 160, b: 130 } } })
+    .jpeg()
+    .withExif({ IFD0: { Copyright: 'secret-location', Make: 'TestPhone' } })
+    .toBuffer()
+}
+
+/** Загрузка фото по полному пути: upload-url → «телефон» кладёт файл → finalize. Возвращает id */
+export async function uploadPhoto(t: TestApp, agent: ReturnType<typeof request.agent>, houseId: string, purpose: 'REQUEST_PHOTO' | 'TASK_PHOTO' = 'REQUEST_PHOTO') {
+  const body = await photo()
+  const res = await agent.post(`/v1/houses/${houseId}/files/upload-url`).send({ purpose, mime_type: 'image/jpeg', size_bytes: body.length, name: 'IMG_0001.jpg' })
+  expect(res.status).toBe(201)
+  t.storage.putAsClient(res.body.upload_url, body)
+  const fin = await agent.post(`/v1/houses/${houseId}/files/${res.body.file_id}/finalize`)
+  expect(fin.status).toBe(200)
+  return res.body.file_id as string
 }

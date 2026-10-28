@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "ortaq-dev",
+      "credentials": [{ "accessKey": "ortaq-dev", "secretKey": "ortaq-dev-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

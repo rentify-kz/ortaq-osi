@@ -49,6 +49,11 @@ export class CryptoService {
     return bytes(createHash('sha256').update(value).digest())
   }
 
+  /** Хеш содержимого файла: поиск повторных загрузок того же фото или чека */
+  sha256Bytes(value: Uint8Array): Uint8Array<ArrayBuffer> {
+    return bytes(createHash('sha256').update(value).digest())
+  }
+
   /** 16 байт = 128 бит случайности для ссылок-приглашений, 32 — для refresh и токенов из писем */
   token(bytes = 32): string {
     return randomBytes(bytes).toString('base64url')

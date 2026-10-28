@@ -23,5 +23,16 @@ services:
     image: axllent/mailpit:v1.24.1
     ports: ["1035:1025", "8035:8025"]
 
+  # Объектное хранилище в разработке: S3-совместимый SeaweedFS вместо Yandex Object Storage.
+  # Ключи только для локальной машины, порт S3 — 8343
+  storage:
+    image: chrislusf/seaweedfs:4.48
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=20 -master.volumeSizeLimitMB=256
+    ports: ["8343:8333"]
+    volumes:
+      - storagedata:/data
+      - ./infra/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
 volumes:
   pgdata:
+  storagedata:

@@ -19,6 +19,7 @@ import { ctx } from '../common/context'
 const HOUSE_SCOPED = new Set<string>([
   'Unit', 'HouseMembership', 'UnitOwnership', 'Invite', 'JoinRequest',
   'OwnerRegistryEntry', 'RegistryImport', 'Announcement', 'AnnouncementTarget', 'AnnouncementRead', 'StaffMember', 'Contractor',
+  'File', 'Request', 'RequestStage', 'RequestEvent', 'RequestFollower', 'Task', 'TaskCompletion', 'RecurringTaskTemplate',
 ])
 
 const WHERE_OPERATIONS = new Set<string>([

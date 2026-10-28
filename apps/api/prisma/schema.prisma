@@ -142,6 +142,13 @@ model House {
   announcements Announcement[]
   staff         StaffMember[]
   contractors   Contractor[]
+  files         File[]
+  requests      Request[]
+  tasks         Task[]
+  recurring     RecurringTaskTemplate[]
+
+  /// Счётчик номеров заявок дома: «заявка №47». Увеличивается в той же транзакции, что и вставка
+  requestSeq Int @default(0) @map("request_seq")
 
   @@index([organizationId])
   @@map("houses")
@@ -164,6 +171,7 @@ model Unit {
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   ownerships UnitOwnership[]
+  requests   Request[]
 
   @@unique([houseId, number])
   @@map("units")
@@ -199,6 +207,8 @@ model User {
   devices           DeviceToken[]
   notifications     Notification[]
   notificationPrefs NotificationPreference[]
+  requests          Request[]                @relation("RequestAuthor")
+  tasks             Task[]                   @relation("TaskAssignee")
 
   @@map("users")
 }
@@ -596,6 +606,8 @@ model Contractor {
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
+  tasks Task[]
+
   @@index([houseId])
   @@map("contractors")
 }
@@ -643,4 +655,338 @@ model NotificationPreference {
 
   @@id([userId, category])
   @@map("notification_preferences")
+}
+
+/**
+ * ───────── фаза 2: файлы, заявки, задачи ─────────
+ */
+
+enum FilePurpose {
+  REQUEST_PHOTO
+  TASK_PHOTO
+}
+
+enum FileStatus {
+  PENDING_UPLOAD
+  READY
+  REJECTED
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+}
+
+enum RequestCategory {
+  PLUMBING
+  ELECTRICITY
+  HEATING
+  ELEVATOR
+  CLEANING
+  YARD
+  FACADE
+  ROOF
+  BASEMENT
+  TRASH
+  SECURITY
+  OTHER
+}
+
+enum LocationType {
+  YARD
+  ENTRANCE
+  APARTMENT
+  FACADE
+  ROOF
+  BASEMENT
+  PARKING
+  COMMON_AREA
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum PrioritySetBy {
+  AI_SUGGESTED
+  CHAIRMAN
+}
+
+enum RequestStatus {
+  NEW
+  TRIAGE
+  REJECTED
+  ACCEPTED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum StageStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  SKIPPED
+}
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum TaskSource {
+  MANUAL
+  FROM_REQUEST
+  FROM_VOICE
+  RECURRING
+}
+
+enum AiJobType {
+  REQUEST_TRIAGE
+  REQUEST_SUGGEST
+}
+
+enum AiJobStatus {
+  DONE
+  FAILED
+}
+
+enum HumanDecision {
+  ACCEPTED
+  MODIFIED
+  REJECTED
+}
+
+/// Файл в объектном хранилище. Прямого права на файл нет: оно наследуется от родителя (заявки, отчёта о работе)
+model File {
+  id           String      @id @default(uuid(7)) @db.Uuid
+  houseId      String      @map("house_id") @db.Uuid
+  house        House       @relation(fields: [houseId], references: [id])
+  storageKey   String      @unique @map("storage_key")
+  originalName String      @map("original_name")
+  /// Определён по содержимому при проверке, а не по расширению или заявлению клиента
+  mimeType     String      @map("mime_type")
+  sizeBytes    Int         @map("size_bytes")
+  contentHash  Bytes?      @map("content_hash")
+  width        Int?
+  height       Int?
+  purpose      FilePurpose
+  status       FileStatus  @default(PENDING_UPLOAD)
+  scanStatus   ScanStatus  @default(PENDING) @map("scan_status")
+  exifStripped Boolean     @default(false) @map("exif_stripped")
+  uploadedBy   String      @map("uploaded_by") @db.Uuid
+  /// К чему привязан: REQUEST, TASK_COMPLETION. До привязки файл видит только загрузивший
+  parentType   String?     @map("parent_type")
+  parentId     String?     @map("parent_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  finalizedAt  DateTime?   @map("finalized_at") @db.Timestamptz
+
+  @@index([houseId, parentType, parentId])
+  @@map("files")
+}
+
+model Request {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  houseId          String          @map("house_id") @db.Uuid
+  house            House           @relation(fields: [houseId], references: [id])
+  number           Int
+  authorId         String          @map("author_id") @db.Uuid
+  author           User            @relation("RequestAuthor", fields: [authorId], references: [id])
+  title            String
+  description      String
+  category         RequestCategory
+  locationType     LocationType    @map("location_type")
+  locationEntrance Int?            @map("location_entrance")
+  locationFloor    Int?            @map("location_floor")
+  locationDetail   String?         @map("location_detail")
+  unitId           String?         @map("unit_id") @db.Uuid
+  unit             Unit?           @relation(fields: [unitId], references: [id])
+  priority         Priority        @default(NORMAL)
+  prioritySetBy    PrioritySetBy?  @map("priority_set_by")
+  status           RequestStatus   @default(NEW)
+  /// Результат триажа: осмысленность, приоритет, обоснование. Подсказка, а не решение
+  aiTriage         Json?           @map("ai_triage")
+  /// Пометки для председателя: NEEDS_CLARIFICATION, SUSPICIOUS, POSSIBLE_DUPLICATE, NO_AUTOCHECK
+  triageFlags      String[]        @default([]) @map("triage_flags")
+  duplicateOfId    String?         @map("duplicate_of_id") @db.Uuid
+  duplicateOf      Request?        @relation("RequestDuplicates", fields: [duplicateOfId], references: [id])
+  duplicates       Request[]       @relation("RequestDuplicates")
+  rejectionReason  String?         @map("rejection_reason")
+  photoFileIds     String[]        @default([]) @map("photo_file_ids") @db.Uuid
+  rating           Int?
+  ratingComment    String?         @map("rating_comment")
+  acceptedAt       DateTime?       @map("accepted_at") @db.Timestamptz
+  doneAt           DateTime?       @map("done_at") @db.Timestamptz
+  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  stages    RequestStage[]
+  events    RequestEvent[]
+  followers RequestFollower[]
+  tasks     Task[]
+
+  @@unique([houseId, number])
+  @@index([houseId, status, priority])
+  @@index([houseId, locationType, category])
+  @@map("requests")
+}
+
+/// Этапы работы: прогресс заявки для жильца = доля завершённых этапов
+model RequestStage {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  houseId     String      @map("house_id") @db.Uuid
+  requestId   String      @map("request_id") @db.Uuid
+  request     Request     @relation(fields: [requestId], references: [id])
+  order       Int
+  title       String
+  status      StageStatus @default(PENDING)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz
+  completedBy String?     @map("completed_by") @db.Uuid
+  note        String?
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  tasks Task[]
+
+  @@index([requestId, order])
+  @@map("request_stages")
+}
+
+/// История заявки для экрана жильца. public = false — служебные события, только правлению
+model RequestEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  houseId   String   @map("house_id") @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  request   Request  @relation(fields: [requestId], references: [id])
+  actorId   String?  @map("actor_id") @db.Uuid
+  type      String
+  data      Json?
+  public    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([requestId, createdAt])
+  @@map("request_events")
+}
+
+/// Жильцы, присоединившиеся к заявке-дубликату: «об этом уже сообщили — следить за решением»
+model RequestFollower {
+  houseId   String   @map("house_id") @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  request   Request  @relation(fields: [requestId], references: [id])
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([requestId, userId])
+  @@map("request_followers")
+}
+
+model Task {
+  id                  String                 @id @default(uuid(7)) @db.Uuid
+  houseId             String                 @map("house_id") @db.Uuid
+  house               House                  @relation(fields: [houseId], references: [id])
+  assigneeId          String?                @map("assignee_id") @db.Uuid
+  assignee            User?                  @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  contractorId        String?                @map("contractor_id") @db.Uuid
+  contractor          Contractor?            @relation(fields: [contractorId], references: [id])
+  requestId           String?                @map("request_id") @db.Uuid
+  request             Request?               @relation(fields: [requestId], references: [id])
+  stageId             String?                @map("stage_id") @db.Uuid
+  stage               RequestStage?          @relation(fields: [stageId], references: [id])
+  recurringTemplateId String?                @map("recurring_template_id") @db.Uuid
+  recurringTemplate   RecurringTaskTemplate? @relation(fields: [recurringTemplateId], references: [id])
+  /// Момент вхождения расписания: не даёт породить одну и ту же рутинную задачу дважды
+  occurrenceAt        DateTime?              @map("occurrence_at") @db.Timestamptz
+  title               String
+  description         String?
+  specialization      Specialization?
+  priority            Priority               @default(NORMAL)
+  dueAt               DateTime?              @map("due_at") @db.Timestamptz
+  requiresPhoto       Boolean                @default(false) @map("requires_photo")
+  status              TaskStatus             @default(ASSIGNED)
+  source              TaskSource
+  createdBy           String?                @map("created_by") @db.Uuid
+  startedAt           DateTime?              @map("started_at") @db.Timestamptz
+  closedAt            DateTime?              @map("closed_at") @db.Timestamptz
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz
+
+  completions TaskCompletion[]
+
+  @@unique([recurringTemplateId, occurrenceAt])
+  @@index([houseId, status])
+  @@index([assigneeId, status])
+  @@map("tasks")
+}
+
+/// Отчёт о выполнении. Фото видны жильцам только после подтверждения председателем
+model TaskCompletion {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  houseId            String    @map("house_id") @db.Uuid
+  taskId             String    @map("task_id") @db.Uuid
+  task               Task      @relation(fields: [taskId], references: [id])
+  /// Ключ повтора от клиента: офлайн-очередь может прислать отчёт дважды
+  clientKey          String?   @unique @map("client_key")
+  completedBy        String    @map("completed_by") @db.Uuid
+  note               String?
+  photoFileIds       String[]  @default([]) @map("photo_file_ids") @db.Uuid
+  completedAt        DateTime  @default(now()) @map("completed_at") @db.Timestamptz
+  approvedBy         String?   @map("approved_by") @db.Uuid
+  approvedAt         DateTime? @map("approved_at") @db.Timestamptz
+  rejectionReason    String?   @map("rejection_reason")
+  visibleToResidents Boolean   @default(false) @map("visible_to_residents")
+  includeInReport    Boolean   @default(false) @map("include_in_report")
+
+  @@index([taskId])
+  @@map("task_completions")
+}
+
+/// Рутинная работа по расписанию RFC 5545: «каждый будний день», «первый понедельник месяца»
+model RecurringTaskTemplate {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  houseId           String          @map("house_id") @db.Uuid
+  house             House           @relation(fields: [houseId], references: [id])
+  title             String
+  description       String?
+  specialization    Specialization?
+  defaultAssigneeId String?         @map("default_assignee_id") @db.Uuid
+  rrule             String
+  leadTimeHours     Int             @default(12) @map("lead_time_hours")
+  requiresPhoto     Boolean         @default(false) @map("requires_photo")
+  isActive          Boolean         @default(true) @map("is_active")
+  createdBy         String          @map("created_by") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  tasks Task[]
+
+  @@index([houseId, isActive])
+  @@map("recurring_task_templates")
+}
+
+/// Каждый вызов модели. Вход — ссылка на сущность, не текст; human_decision — оценка полезности ИИ
+model AiJob {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  houseId       String?        @map("house_id") @db.Uuid
+  type          AiJobType
+  provider      String
+  model         String
+  inputRef      Json           @map("input_ref")
+  output        Json?
+  status        AiJobStatus
+  latencyMs     Int?           @map("latency_ms")
+  error         String?
+  humanDecision HumanDecision? @map("human_decision")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([houseId, type, createdAt])
+  @@map("ai_jobs")
 }

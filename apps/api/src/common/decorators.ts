@@ -22,7 +22,7 @@ export const STEP_UP = 'ortaq:step-up'
 /** Опасное действие: нужен свежий X-Step-Up-Token, иначе 428 */
 export const StepUp = () => SetMetadata(STEP_UP, true)
 
-export type RateClass = 'auth' | 'write' | 'read'
+export type RateClass = 'auth' | 'write' | 'read' | 'upload'
 export const RATE = 'ortaq:rate'
 /** Класс лимита из docs/03 §1. По умолчанию GET — read, остальное — write */
 export const Rate = (cls: RateClass) => SetMetadata(RATE, cls)

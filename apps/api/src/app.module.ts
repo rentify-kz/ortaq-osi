@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
 import { JwtModule } from '@nestjs/jwt'
-import { env } from './config/env'
+import { env, storageProvider } from './config/env'
 import { AdminGuard, AuthGuard, HouseGuard, RateLimitGuard, RateLimiter, StepUpGuard } from './common/guards'
 import { CryptoService } from './infra/crypto.service'
 import { MailerService } from './infra/mailer.service'
@@ -43,6 +43,12 @@ import { AnnouncementsService } from './modules/announcements/announcements.serv
 import { NotificationsController } from './modules/notifications/notifications.controller'
 import { NotificationsDispatcher } from './modules/notifications/notifications.dispatcher'
 import { NotificationsService } from './modules/notifications/notifications.service'
+import { FilesController } from './modules/files/files.controller'
+import { FilesService } from './modules/files/files.service'
+import { MemoryStorageProvider } from './integrations/storage/memory-storage.provider'
+import { S3StorageProvider } from './integrations/storage/s3-storage.provider'
+import { STORAGE_PROVIDER, type StorageProvider } from './integrations/storage/storage.provider'
+import { DevStorageBootstrap } from './integrations/storage/dev-storage.bootstrap'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -50,6 +56,10 @@ function signatureProvider(): SignatureProvider {
   throw new Error('SIGNATURE_PROVIDER=sigex: адаптер SIGEX ещё не подключён')
 }
 const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
+
+function storageProviderFactory(): StorageProvider {
+  return storageProvider(env()) === 'memory' ? new MemoryStorageProvider() : new S3StorageProvider(env())
+}
 
 @Module({
   imports: [
@@ -62,7 +72,7 @@ const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
-    AnnouncementsController, NotificationsController,
+    AnnouncementsController, NotificationsController, FilesController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -71,6 +81,8 @@ const devStandIns = env().SIGNATURE_PROVIDER === 'dev'
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
+    FilesService, DevStorageBootstrap,
+    { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },
     { provide: SIGNATURE_PROVIDER, useFactory: signatureProvider },
     // Порядок = порядок проверки: кто ты → не превысил ли лимит → админ-панель → дом → step-up
     { provide: APP_GUARD, useClass: AuthGuard },

@@ -26,6 +26,8 @@ const LIMITS: Record<RateClass, { limit: number; windowMs: number }> = {
   auth: { limit: 5, windowMs: 15 * 60_000 },
   write: { limit: 60, windowMs: 60_000 },
   read: { limit: 300, windowMs: 60_000 },
+  // Загрузка файлов — самое дорогое для хранилища: 30 в час на пользователя (docs/03 §1)
+  upload: { limit: 30, windowMs: 3600_000 },
 }
 
 /**
