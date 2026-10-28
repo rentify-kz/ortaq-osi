@@ -7,6 +7,8 @@ import { ErrorFilter } from './common/error.filter'
 import { env } from './config/env'
 
 /** Общая настройка приложения: одна и та же в main.ts и в интеграционных тестах */
+const MOBILE_WEB_DEV_ORIGIN = 'http://localhost:8081'
+
 export function configure(app: NestExpressApplication) {
   // IP клиента для лимитов и аудита: доверяем только своему прокси (Vite в разработке, балансировщик в продакшене)
   app.set('trust proxy', 'loopback')
@@ -17,6 +19,8 @@ export function configure(app: NestExpressApplication) {
   })
   app.setGlobalPrefix('v1')
   app.useGlobalFilters(new ErrorFilter())
-  // Веб ходит через прокси с того же origin; CORS только для явного адреса фронтенда
-  app.enableCors({ origin: env().WEB_ORIGIN, credentials: true })
+  // Веб ходит через прокси с того же origin; CORS только для явного адреса фронтенда.
+  // В разработке ещё веб-сборка мобильного приложения (Expo, порт 8081): она шлёт Bearer, без cookie
+  const devOrigins = env().NODE_ENV === 'development' ? [MOBILE_WEB_DEV_ORIGIN] : []
+  app.enableCors({ origin: [env().WEB_ORIGIN, ...devOrigins], credentials: true })
 }

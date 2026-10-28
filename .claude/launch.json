@@ -30,6 +30,23 @@
       ],
       "port": 5174,
       "cwd": "apps/web"
+    },
+    {
+      "name": "ortaq-mobile",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8081"
+      ],
+      "port": 8081,
+      "cwd": "apps/mobile",
+      "env": {
+        "BROWSER": "none",
+        "EXPO_NO_TELEMETRY": "1"
+      }
     }
   ]
 }
