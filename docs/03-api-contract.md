@@ -402,10 +402,15 @@ API их не блокирует — иначе пришлось бы дубли
 
 | Метод | Путь | Роль | Скоуп | Step-up | Лимит | Аудит |
 |---|---|---|---|---|---|---|
-| GET | `/me/charges` | resident | `self` | нет | `read` | нет |
+| GET | `/houses/:id/tariffs` | chairman, accountant | `house` | нет | `read` | нет |
+| POST | `/houses/:id/tariffs` | chairman | `house` | да | `write` | да |
+| GET | `/houses/:id/my-charges` | член дома (свои помещения) | `self` | нет | `read` | нет |
 | GET | `/houses/:id/charges` | chairman, accountant | `house` | нет | `read` | нет |
+| GET | `/houses/:id/charges/summary?period=` | chairman, accountant | `house` | нет | `read` | нет |
 | POST | `/houses/:id/charges/generate` | chairman | `house` | да | `write` | да |
-| POST | `/houses/:id/charges` | chairman | `house` | да | `write` | да |
+| POST | `/houses/:id/charge-collections` | chairman | `house` | да | `write` | да |
+| PATCH | `/houses/:id/charges/:chargeId` | chairman | `house` | да | `write` | да |
+| POST | `/houses/:id/charges/:chargeId/cancel` | chairman | `house` | да | `write` | да |
 | GET | `/charges/:id/payment-link` | resident (свой) | `self` | нет | `read` | да |
 | POST | `/charges/:id/payment` | resident (свой) | `self` | нет | `upload` | да |
 | GET | `/houses/:id/payments` | chairman, accountant | `house` | нет | `read` | нет |
@@ -414,6 +419,8 @@ API их не блокирует — иначе пришлось бы дубли
 | GET | `/houses/:id/debtors` | chairman, accountant | `house` | нет | `read` | да |
 
 **`GET /houses/:id/debtors` доступен только председателю и бухгалтеру.** Жилец получает `403`. Обоснование — в [14-compliance-privacy.md](14-compliance-privacy.md#4-приватность-внутри-дома): публикация поимённого списка должников на весь дом раскрывает персональные данные и порождает конфликты между соседями. Просмотр списка пишется в аудит.
+
+**Тарифы** задаются с текущего месяца или позже и не правятся: новый тариф того же вида закрывает предыдущий (`effective_to`). Виды: `MAINTENANCE` и `CAPITAL_REPAIR` — за м² для квартир и нежилых помещений, `PARKING` — фиксированно для парковочных мест и кладовок (по умолчанию; `unit_types` можно задать). **Начисление** за месяц идёт 1 числа по расписанию и вручную (`generate`, текущий или прошлый месяц); повторный запуск добавляет только недостающее. Помещения без площади пропускаются и возвращаются списком в `skipped_units`. Срок оплаты — последний день месяца; после него неоплаченное становится `OVERDUE`. Сумму начисления можно исправить или отменить только до первой оплаты и с причиной. **Целевой сбор** (`charge-collections`) требует `decision_note` — основание из протокола собрания; файл протокола виден всем жильцам. `my-charges` показывает начисления только по помещениям с подтверждённой собственностью.
 
 `GET /charges/:id/payment-link` возвращает deeplink Kaspi для режима `RECEIPT`; в режиме `KASPI_API` — счёт, выставленный через merchant API.
 

@@ -66,6 +66,9 @@ import { AccountsService } from './modules/finance/accounts.service'
 import { CategoriesService } from './modules/finance/categories.service'
 import { BudgetCategoriesController, FinanceController } from './modules/finance/finance.controller'
 import { TransactionsService } from './modules/finance/transactions.service'
+import { ChargesController } from './modules/finance/charges.controller'
+import { ChargesScheduler } from './modules/finance/charges.scheduler'
+import { ChargesService } from './modules/finance/charges.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -90,7 +93,7 @@ function storageProviderFactory(): StorageProvider {
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
     AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController, RecurringController,
-    BudgetCategoriesController, FinanceController,
+    BudgetCategoriesController, FinanceController, ChargesController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -100,7 +103,7 @@ function storageProviderFactory(): StorageProvider {
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
     FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService, RecurringService, RecurringScheduler,
-    CategoriesService, AccountsService, TransactionsService,
+    CategoriesService, AccountsService, TransactionsService, ChargesService, ChargesScheduler,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },

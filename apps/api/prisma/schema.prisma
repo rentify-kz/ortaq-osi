@@ -148,6 +148,10 @@ model House {
   recurring     RecurringTaskTemplate[]
   accounts      FinanceAccount[]
   transactions  Transaction[]
+  tariffs       Tariff[]
+  charges       Charge[]
+  chargeRuns    ChargeRun[]
+  collections   ChargeCollection[]
 
   /// Счётчик номеров операций: «операция №12» в журнале и отчёте
   transactionSeq Int @default(0) @map("transaction_seq")
@@ -177,6 +181,7 @@ model Unit {
 
   ownerships UnitOwnership[]
   requests   Request[]
+  charges    Charge[]
 
   @@unique([houseId, number])
   @@map("units")
@@ -1139,4 +1144,126 @@ model TransactionDocument {
 
   @@index([transactionId])
   @@map("transaction_documents")
+}
+
+// ───────── Фаза 3: начисления (docs/10 §4) ─────────
+
+enum ChargeType {
+  MAINTENANCE
+  CAPITAL_REPAIR
+  PARKING
+  TARGETED
+  OTHER
+}
+
+enum TariffBasis {
+  PER_SQM
+  FIXED
+}
+
+enum ChargeStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+/// Тариф действует с отчётного месяца и до следующего тарифа того же вида. Не правится: новый тариф — новая строка
+model Tariff {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  houseId       String      @map("house_id") @db.Uuid
+  house         House       @relation(fields: [houseId], references: [id])
+  type          ChargeType
+  basis         TariffBasis
+  rate          Decimal     @db.Decimal(12, 2)
+  /// К каким помещениям применяется: взносы на управление — квартиры и нежилые, парковка — места и кладовки
+  unitTypes     UnitType[]  @map("unit_types")
+  /// YYYY-MM, включительно
+  effectiveFrom String      @map("effective_from") @db.VarChar(7)
+  /// YYYY-MM, не включительно; ставится, когда тариф заменён
+  effectiveTo   String?     @map("effective_to") @db.VarChar(7)
+  /// Основание: «протокол собрания №3 от 12.09.2026»
+  decisionNote  String?     @map("decision_note")
+  createdBy     String      @map("created_by") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  charges       Charge[]
+
+  @@index([houseId, type])
+  @@map("tariffs")
+}
+
+/// Целевой сбор: решение собрания, а не ежемесячный тариф. Порождает начисления по помещениям
+model ChargeCollection {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  houseId        String      @map("house_id") @db.Uuid
+  house          House       @relation(fields: [houseId], references: [id])
+  type           ChargeType
+  title          String
+  basis          TariffBasis
+  rate           Decimal     @db.Decimal(12, 2)
+  unitTypes      UnitType[]  @map("unit_types")
+  period         String      @db.VarChar(7)
+  dueDate        DateTime    @map("due_date") @db.Date
+  decisionNote   String      @map("decision_note")
+  protocolFileId String?     @map("protocol_file_id") @db.Uuid
+  createdBy      String      @map("created_by") @db.Uuid
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  charges        Charge[]
+
+  @@index([houseId, period])
+  @@map("charge_collections")
+}
+
+model Charge {
+  id               String            @id @default(uuid(7)) @db.Uuid
+  houseId          String            @map("house_id") @db.Uuid
+  house            House             @relation(fields: [houseId], references: [id])
+  unitId           String            @map("unit_id") @db.Uuid
+  unit             Unit              @relation(fields: [unitId], references: [id])
+  period           String            @db.VarChar(7)
+  type             ChargeType
+  title            String
+  amount           Decimal           @db.Decimal(12, 2)
+  /// Как посчитано: тариф × площадь или фиксированно — жилец видит формулу, а не только сумму
+  calculationBasis Json              @map("calculation_basis")
+  dueDate          DateTime          @map("due_date") @db.Date
+  status           ChargeStatus      @default(PENDING)
+  paidAmount       Decimal           @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  tariffId         String?           @map("tariff_id") @db.Uuid
+  tariff           Tariff?           @relation(fields: [tariffId], references: [id])
+  collectionId     String?           @map("collection_id") @db.Uuid
+  collection       ChargeCollection? @relation(fields: [collectionId], references: [id])
+  /// Ключ уникальности: '' для ежемесячных, id сбора для целевых — в одном месяце может быть несколько сборов
+  collectionKey    String            @default("") @map("collection_key") @db.VarChar(36)
+  /// null — начислено системой по расписанию
+  createdBy        String?           @map("created_by") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  cancelledAt      DateTime?         @map("cancelled_at") @db.Timestamptz
+  cancelledBy      String?           @map("cancelled_by") @db.Uuid
+  cancelReason     String?           @map("cancel_reason")
+
+  @@unique([unitId, period, type, collectionKey])
+  @@index([houseId, period])
+  @@index([houseId, status])
+  @@map("charges")
+}
+
+/// Итог начисления дома за месяц: по нему планировщик понимает, что месяц уже начислен
+model ChargeRun {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  houseId      String   @map("house_id") @db.Uuid
+  house        House    @relation(fields: [houseId], references: [id])
+  period       String   @db.VarChar(7)
+  unitsCharged Int      @map("units_charged")
+  /// Помещения без площади: по тарифу за м² им нечего начислить, председатель видит список
+  unitsSkipped Int      @map("units_skipped")
+  total        Decimal  @db.Decimal(14, 2)
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([houseId, period])
+  @@map("charge_runs")
 }

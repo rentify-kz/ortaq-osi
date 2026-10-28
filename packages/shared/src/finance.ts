@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { UnitType } from './enums.js'
 
 /* Фаза 3: план счетов, счета дома, операции (docs/03 §12, docs/10) */
 
@@ -169,4 +170,86 @@ export type TransactionView = {
   corrected_by: { id: string; number: number } | null
   /** Только для председателя и бухгалтера */
   created_by?: { id: string; name: string }
+}
+
+/* ───────── тарифы и начисления (docs/10 §4) ───────── */
+
+export const ChargeType = ['MAINTENANCE', 'CAPITAL_REPAIR', 'PARKING', 'TARGETED', 'OTHER'] as const
+export type ChargeType = (typeof ChargeType)[number]
+export const TariffType = ['MAINTENANCE', 'CAPITAL_REPAIR', 'PARKING'] as const
+export type TariffType = (typeof TariffType)[number]
+export const TariffBasis = ['PER_SQM', 'FIXED'] as const
+export type TariffBasis = (typeof TariffBasis)[number]
+export const ChargeStatus = ['PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'] as const
+export type ChargeStatus = (typeof ChargeStatus)[number]
+
+/** Строка поступлений формы, куда ляжет оплата начисления */
+export const CHARGE_CATEGORY: Record<ChargeType, string> = { MAINTENANCE: '6.1', PARKING: '6.2', CAPITAL_REPAIR: '6.3', TARGETED: '6.5', OTHER: '6.7' }
+
+/** Кому что начисляется по умолчанию: взносы — квартирам и нежилым, парковка — местам и кладовкам */
+export const DEFAULT_UNIT_TYPES: Record<TariffType, UnitType[]> = {
+  MAINTENANCE: ['APARTMENT', 'COMMERCIAL'],
+  CAPITAL_REPAIR: ['APARTMENT', 'COMMERCIAL'],
+  PARKING: ['PARKING', 'STORAGE'],
+}
+
+const unitTypes = z.array(z.enum(UnitType)).min(1, 'Выберите виды помещений').max(4)
+
+export const tariffBody = z.object({
+  type: z.enum(TariffType),
+  basis: z.enum(TariffBasis),
+  rate: money,
+  unit_types: unitTypes.optional(),
+  effective_from: period,
+  decision_note: trimmed(3, 300).optional(),
+})
+export type TariffBody = z.input<typeof tariffBody>
+
+export const generateChargesBody = z.object({ period })
+export type GenerateChargesBody = z.infer<typeof generateChargesBody>
+
+export const collectionBody = z.object({
+  type: z.enum(['TARGETED', 'OTHER']),
+  title: trimmed(3, 120),
+  basis: z.enum(TariffBasis),
+  rate: money,
+  unit_types: unitTypes,
+  period,
+  due_date: isoDate,
+  /** Целевой сбор — только по решению собрания (docs/10 §4) */
+  decision_note: trimmed(5, 300),
+  protocol_file_id: z.uuid().optional(),
+})
+export type CollectionBody = z.input<typeof collectionBody>
+
+export const updateChargeBody = z.object({ amount: money, reason: trimmed(5, 300) })
+export type UpdateChargeBody = z.infer<typeof updateChargeBody>
+export const cancelChargeBody = z.object({ reason: trimmed(5, 300) })
+export type CancelChargeBody = z.infer<typeof cancelChargeBody>
+
+export const chargeListQuery = z.object({
+  period: period.optional(),
+  status: z.enum([...ChargeStatus, 'open', 'all']).default('all'),
+  unit_id: z.uuid().optional(),
+})
+export type ChargeListQuery = z.input<typeof chargeListQuery>
+
+export type TariffView = {
+  id: string; type: TariffType; basis: TariffBasis; rate: number; unit_types: UnitType[]
+  effective_from: string; effective_to: string | null; decision_note: string | null; created_at: string
+}
+
+export type ChargeView = {
+  id: string; period: string; type: ChargeType; title: string
+  unit: { id: string; number: string; type: UnitType; entrance: number | null }
+  amount: number; paid_amount: number; due_date: string; status: ChargeStatus
+  /** Формула для жильца: «45,5 м² × 120 ₸» */
+  basis: { kind: TariffBasis; rate: number; area?: number }
+  cancel_reason: string | null
+}
+
+export type ChargeRunView = {
+  period: string; units_charged: number; units_skipped: number; total: number; created_at: string; updated_at: string
+  /** Помещения, которым тариф за м² начислить не смог: нет площади */
+  skipped_units: { id: string; number: string }[]
 }

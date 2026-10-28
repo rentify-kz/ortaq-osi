@@ -105,6 +105,13 @@ const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => strin
   ['post', () => `/houses/${houseId}/transactions/${transactionId}/void`, BOARD],
   ['post', () => `/houses/${houseId}/transactions/${transactionId}/documents`, BOARD],
   ['post', () => `/houses/${houseId}/transactions/${transactionId}/documents/${crypto.randomUUID()}/remove`, BOARD],
+  ['get', () => `/houses/${houseId}/tariffs`, BOARD],
+  ['post', () => `/houses/${houseId}/tariffs`, CHAIR],
+  ['get', () => `/houses/${houseId}/charges`, BOARD],
+  ['get', () => `/houses/${houseId}/charges/summary?period=2026-01`, BOARD],
+  ['post', () => `/houses/${houseId}/charges/generate`, CHAIR],
+  ['post', () => `/houses/${houseId}/charge-collections`, CHAIR],
+  ['get', () => `/houses/${houseId}/my-charges`, ALL],
 ]
 
 describe('access matrix', () => {

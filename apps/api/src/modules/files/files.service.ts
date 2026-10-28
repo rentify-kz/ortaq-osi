@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service'
 import { isBoardRole, visibleRequestsWhere } from '../requests/visibility'
 import { reencodeImage, sniffImage } from './images'
 
-export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION'
+export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION' | 'CHARGE_COLLECTION'
 
 const rejected = (message: string) => new AppError(422, ErrorCode.FILE_REJECTED, message)
 
@@ -135,6 +135,9 @@ export class FilesService {
         const doc = await tx.transactionDocument.findFirst({ where: { fileId: file.id, removedAt: null }, include: { transaction: { select: { confirmedAt: true } } } })
         return !!doc && doc.transaction.confirmedAt !== null
       }
+      // Протокол собрания — основание целевого сбора: его вправе видеть каждый, с кого собирают
+      case 'CHARGE_COLLECTION':
+        return (await tx.chargeCollection.count({ where: { id: file.parentId } })) > 0
       default:
         return false
     }
