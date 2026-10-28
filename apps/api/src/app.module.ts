@@ -58,6 +58,9 @@ import { RequestActionsService } from './modules/requests/request-actions.servic
 import { StagesService } from './modules/tasks/stages.service'
 import { TasksController } from './modules/tasks/tasks.controller'
 import { TasksService } from './modules/tasks/tasks.service'
+import { RecurringController } from './modules/recurring/recurring.controller'
+import { RecurringScheduler } from './modules/recurring/recurring.scheduler'
+import { RecurringService } from './modules/recurring/recurring.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -81,7 +84,7 @@ function storageProviderFactory(): StorageProvider {
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
-    AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController,
+    AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController, RecurringController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -90,7 +93,7 @@ function storageProviderFactory(): StorageProvider {
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
-    FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService,
+    FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService, RecurringService, RecurringScheduler,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },

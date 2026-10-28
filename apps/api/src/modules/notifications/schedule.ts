@@ -13,7 +13,7 @@ const almaty = new Intl.DateTimeFormat('en-GB', {
 })
 
 /** Смещение Алматы от UTC в момент `at`, через базу часовых поясов, а не константой */
-function almatyOffsetMs(at: Date): number {
+export function almatyOffsetMs(at: Date): number {
   const p = Object.fromEntries(almaty.formatToParts(at).map((x) => [x.type, Number(x.value)]))
   const asUtc = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!)
   return asUtc - Math.floor(at.getTime() / 1000) * 1000
