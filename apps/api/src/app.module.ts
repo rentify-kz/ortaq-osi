@@ -55,6 +55,9 @@ import { RulesAiProvider } from './integrations/ai/rules-ai.provider'
 import { RequestsController } from './modules/requests/requests.controller'
 import { RequestsService } from './modules/requests/requests.service'
 import { RequestActionsService } from './modules/requests/request-actions.service'
+import { StagesService } from './modules/tasks/stages.service'
+import { TasksController } from './modules/tasks/tasks.controller'
+import { TasksService } from './modules/tasks/tasks.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -78,7 +81,7 @@ function storageProviderFactory(): StorageProvider {
   controllers: [
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
-    AnnouncementsController, NotificationsController, FilesController, RequestsController,
+    AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -87,7 +90,7 @@ function storageProviderFactory(): StorageProvider {
     ReadinessService, AdminService, MembershipsService, VerificationService, OwnershipsService,
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
-    FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService,
+    FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },

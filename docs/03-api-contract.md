@@ -270,25 +270,24 @@ API их не блокирует — иначе пришлось бы дубли
 
 ---
 
-## 9. Задачи
+## 9. Этапы и задачи
 
 | Метод | Путь | Роль | Скоуп | Step-up | Лимит | Аудит |
 |---|---|---|---|---|---|---|
-| GET | `/me/tasks` | worker | `self` | нет | `read` | нет |
+| POST | `/houses/:id/requests/:requestId/stages` | chairman | `house` | нет | `write` | да |
+| PATCH | `/houses/:id/requests/:requestId/stages/:stageId` | chairman, исполнитель этапа | `house` | нет | `write` | да |
+| GET | `/houses/:id/my-tasks` | worker | `house` | нет | `read` | нет |
 | GET | `/houses/:id/tasks` | chairman | `house` | нет | `read` | нет |
+| GET | `/houses/:id/tasks/assignees` | chairman | `house` | нет | `read` | нет |
 | POST | `/houses/:id/tasks` | chairman | `house` | нет | `write` | да |
-| PATCH | `/tasks/:id` | chairman | `house` | нет | `write` | да |
-| POST | `/tasks/:id/start` | исполнитель | `house` | нет | `write` | да |
-| POST | `/tasks/:id/complete` | исполнитель | `house` | нет | `upload` | да |
-| POST | `/tasks/:id/approve` | chairman | `house` | нет | `write` | да |
-| POST | `/tasks/:id/reject` | chairman | `house` | нет | `write` | да |
-| GET | `/houses/:id/recurring-templates` | chairman | `house` | нет | `read` | нет |
-| POST | `/houses/:id/recurring-templates` | chairman | `house` | нет | `write` | да |
-| PATCH | `/recurring-templates/:id` | chairman | `house` | нет | `write` | да |
+| GET | `/houses/:id/tasks/:taskId` | chairman, исполнитель | `house` | нет | `read` | нет |
+| PATCH | `/houses/:id/tasks/:taskId` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/tasks/:taskId/start` | исполнитель | `house` | нет | `write` | да |
+| POST | `/houses/:id/tasks/:taskId/complete` | исполнитель; chairman — за подрядчика | `house` | нет | `upload` | да |
+| POST | `/houses/:id/tasks/:taskId/approve` | chairman | `house` | нет | `write` | да |
+| POST | `/houses/:id/tasks/:taskId/reject` | chairman | `house` | нет | `write` | да |
 
-`POST /tasks/:id/complete` принимает `note` и `photo_file_ids`. Переводит задачу в `SUBMITTED`, а не в завершённое: фото станет видимым жильцам только после `approve` председателем.
-
----
+`complete` принимает `note`, `photo_file_ids`, `client_key` и `completed_at` и переводит задачу в `SUBMITTED`: фото станут видны жильцам только после `approve` с `visible_to_residents`. Повтор с тем же `client_key` (офлайн-очередь) не создаёт второй отчёт; время берётся с телефона, но не из будущего. Задача, отменённая председателем, пока работник был без связи, всё равно принимает отчёт: факт работы не теряется. `approve` закрывает этап задачи; `reject` требует причину и возвращает задачу в `IN_PROGRESS` с прежними фото. Работник видит только свои задачи и заявки, по которым они назначены.
 
 ## 10. Объявления
 
