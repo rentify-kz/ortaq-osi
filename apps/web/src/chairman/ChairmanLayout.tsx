@@ -1,5 +1,5 @@
 import { Outlet, useParams } from 'react-router'
-import { ClipboardCheck, ClipboardList, FileSpreadsheet, ListTodo, Megaphone, Ruler, UserRound, Users } from 'lucide-react'
+import { ClipboardCheck, ClipboardList, FileSpreadsheet, ListTodo, Megaphone, Ruler, UserRound, Users, Wallet } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import type { MeResponse } from '@ortaq/shared'
 import { api } from '../shared/api/client'
@@ -41,6 +41,7 @@ export function ChairmanLayout({ me }: { me: MeResponse }) {
       { to: `/h/${houseId}/areas`, label: 'Площади', icon: Ruler },
       { to: `/h/${houseId}/announcements`, label: 'Объявления', icon: Megaphone },
     ] : []),
+    { to: `/h/${houseId}/finance`, label: 'Финансы', icon: Wallet },
     { to: `/h/${houseId}/staff`, label: 'Персонал', icon: UserRound },
   ]
 

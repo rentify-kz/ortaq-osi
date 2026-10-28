@@ -15,6 +15,7 @@ import { Staff } from '../chairman/Staff'
 import { Requests } from '../chairman/Requests'
 import { RequestDetail } from '../chairman/RequestDetail'
 import { Tasks } from '../chairman/Tasks'
+import { Finance } from '../chairman/Finance'
 import { DevEgov } from '../auth/DevEgov'
 import { AdminRoute, HomeRedirect, HouseRoute, NoAccess, Root } from './routes'
 
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
           { path: 'requests', element: <Requests /> },
           { path: 'requests/:requestId', element: <RequestDetail /> },
           { path: 'tasks', element: <Tasks /> },
+          { path: 'finance', element: <Finance /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

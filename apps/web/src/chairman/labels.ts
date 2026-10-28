@@ -25,3 +25,17 @@ export const FLAG_LABELS: Record<string, string> = {
 }
 
 export const PRIORITY_TONE: Record<string, Tone> = { CRITICAL: 'crit', HIGH: 'warn', NORMAL: 'brand', LOW: 'mute' }
+
+/* ───────── финансы ───────── */
+
+export const DOC_KIND: Record<string, string> = {
+  RECEIPT: 'Чек', PAYMENT_ORDER: 'Платёжное поручение', WORK_ACT: 'Акт выполненных работ', DEFECT_ACT: 'Дефектный акт',
+  CONTRACT: 'Договор', PROTOCOL: 'Протокол собрания', OTHER: 'Другой документ',
+}
+/** Чего не хватает: «чек» в списке недостающих означает «чек или платёжное поручение» */
+export const MISSING_DOC: Record<string, string> = { ...DOC_KIND, RECEIPT: 'чек или платёжка', WORK_ACT: 'акт работ', DEFECT_ACT: 'дефектный акт', PROTOCOL: 'протокол собрания' }
+export const TX_STATUS: Record<string, string> = { DRAFT: 'Черновик', CONFIRMED: 'Проведена', VOIDED: 'Аннулирована' }
+export const ACCOUNT_TYPE: Record<string, string> = { CURRENT: 'Текущий счёт', SAVINGS: 'Сберегательный счёт' }
+
+const tenge = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+export const money = (n: number) => `${tenge.format(n)} ₸`
