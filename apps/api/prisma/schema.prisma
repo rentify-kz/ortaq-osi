@@ -1610,6 +1610,7 @@ model BallotSigning {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   completedAt  DateTime? @map("completed_at") @db.Timestamptz
 
+  @@unique([provider, externalId])
   @@index([voteId, userId])
   @@map("ballot_signings")
 }
@@ -1631,7 +1632,7 @@ model Ballot {
   /// Подписанный документ бюллетеня и его хеш
   document     Json
   documentHash Bytes          @map("document_hash")
-  signatureId  String?        @map("signature_id") @db.Uuid
+  signatureId  String?        @unique @map("signature_id") @db.Uuid
   /// Скан бумажного бюллетеня (ст. 43)
   scanFileId   String?        @map("scan_file_id") @db.Uuid
   /// Бумажный бюллетень внёс председатель — всегда в аудите и в протоколе

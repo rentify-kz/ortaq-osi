@@ -63,7 +63,7 @@ export class VotesService {
     return this.detail(id)
   }
 
-  /** Черновик меняется целиком; после уведомления — только секретарь и новые материалы до старта */
+  /** Черновик меняется целиком; после уведомления — только секретарь, пока он не подписал протокол */
   async update(id: string, input: UpdateVoteBody): Promise<VoteView> {
     const body = updateVoteBody.parse(input)
     const userId = ctx().userId ?? ''
@@ -73,7 +73,8 @@ export class VotesService {
       if (vote.status !== 'DRAFT' && agendaKeys.some((k) => body[k] !== undefined)) {
         throw state('Повестка, правила подсчёта и сроки фиксируются уведомлением. Чтобы изменить их, отмените голосование и проведите новое')
       }
-      if (body.material_file_ids?.length && !['DRAFT', 'NOTICE_SENT'].includes(vote.status)) throw state('Материалы добавляются до начала голосования')
+      // Материалы — часть повестки, о которой уведомили: после рассылки их не добавить
+      if (body.material_file_ids?.length && vote.status !== 'DRAFT') throw state('Материалы прикладываются до рассылки уведомления')
       if (body.secretary_user_id !== undefined) await this.assertSecretaryChangeable(tx, vote, body.secretary_user_id)
 
       await tx.vote.update({
@@ -173,13 +174,17 @@ export class VotesService {
     return this.detail(id)
   }
 
-  /** Отмена с причиной. Поданные бюллетени остаются в базе, итоги отменённого голосования не раскрываются */
+  /**
+   * Отмена с причиной — только до окончания срока. Поданные бюллетени остаются, а итоги отменённого
+   * голосования открыты всем: иначе отмена проигрываемого голосования прятала бы его результат
+   */
   async cancel(id: string, input: CancelVoteBody): Promise<VoteView> {
     const { reason } = cancelVoteBody.parse(input)
     const houseId = ctx().houseId ?? ''
     const vote = await this.db.run(async (tx) => {
       const vote = await this.lock(tx, id)
       if (!['DRAFT', 'NOTICE_SENT', 'ACTIVE'].includes(vote.status)) throw state('Голосование уже завершено')
+      if (vote.status === 'ACTIVE' && new Date() >= vote.endsAt!) throw state('Срок голосования истёк: оно закрывается с подсчётом итогов, отменить его нельзя')
       await tx.vote.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledBy: ctx().userId, cancelReason: reason } })
       const ballots = await tx.ballot.count({ where: { voteId: id } })
       await this.audit.append(tx, { action: 'vote.cancel', entityType: 'Vote', entityId: id, after: { from: vote.status, reason, ballots } })
@@ -210,10 +215,17 @@ export class VotesService {
       await this.audit.append(tx, { action: 'vote.close', entityType: 'Vote', entityId: id, after: { protocol: protocolId, by: ctx().userId ? 'user' : 'schedule' } })
       return { vote, protocolId }
     })
-    const signers = await this.db.run((tx) => tx.houseMembership.findMany({ where: { role: 'CHAIRMAN', status: 'ACTIVE' }, select: { userId: true } }))
+    const chairmen = (await this.db.run((tx) => tx.houseMembership.findMany({ where: { role: 'CHAIRMAN', status: 'ACTIVE' }, select: { userId: true } }))).map((m) => m.userId)
+    const signers = [...chairmen, ...(vote.secretaryUserId ? [vote.secretaryUserId] : [])]
     await this.notifications.notify({
-      userIds: [...signers.map((s) => s.userId), ...(vote.secretaryUserId ? [vote.secretaryUserId] : [])], houseId, category: 'VOTES', priority: 'HIGH',
-      title: `Голосование закрыто: ${vote.title}`, body: 'Протокол сформирован. Подпишите его ЭЦП, чтобы опубликовать итоги', payload: { type: 'protocol', id: protocolId, vote_id: id },
+      userIds: signers, houseId, category: 'VOTES', priority: 'HIGH',
+      title: `Голосование закрыто: ${vote.title}`, body: 'Протокол сформирован. Подпишите его ЭЦП, чтобы опубликовать', payload: { type: 'protocol', id: protocolId, vote_id: id },
+    })
+    // Итоги видны всем сразу после закрытия, не дожидаясь подписи протокола: результат нельзя придержать
+    const others = (await this.activeMembers()).filter((m) => !signers.includes(m))
+    await this.notifications.notify({
+      userIds: others, houseId, category: 'VOTES', priority: 'NORMAL',
+      title: `Голосование завершено: ${vote.title}`, body: 'Итоги подсчитаны и доступны в приложении. Протокол опубликуют после подписания', payload: { type: 'vote', id },
     })
     return this.detail(id)
   }
@@ -347,7 +359,7 @@ export class VotesService {
       const v = await tx.vote.findFirst({ where: { id }, include: { snapshot: true } })
       if (!v || (v.status === 'DRAFT' && !board)) throw notFound('Голосование')
       if (!v.snapshot) throw state('Голосование ещё не началось')
-      const hidden = v.status === 'CANCELLED' || (v.status === 'ACTIVE' && !v.resultsVisibleDuring)
+      const hidden = v.status === 'ACTIVE' && !v.resultsVisibleDuring
       const agenda = await loadAgenda(tx, id)
       const ballots = await tx.ballot.findMany({ where: { voteId: id }, include: { answers: { select: { optionId: true } } } })
       const t = tally({
@@ -393,6 +405,8 @@ export class VotesService {
   /** Секретаря можно сменить, пока он не подписал протокол */
   private async assertSecretaryChangeable(tx: Tx, vote: Vote, next: string | null): Promise<void> {
     if (vote.status === 'CANCELLED') throw state('Голосование отменено')
+    // Блокировка протокола: подпись секретаря и его смена не проходят одновременно
+    await tx.$queryRaw`SELECT id FROM protocols WHERE vote_id = ${vote.id}::uuid FOR UPDATE`
     const protocol = await tx.protocol.findFirst({ where: { voteId: vote.id } })
     if (protocol?.secretarySignatureId) throw conflict(ErrorCode.PROTOCOL_STATE, 'Секретарь уже подписал протокол')
     if (next) await this.assertSecretary(tx, next)

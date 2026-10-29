@@ -13,6 +13,7 @@ import { PrismaService, type Tx } from '../../infra/prisma.service'
 import { SIGNATURE_PROVIDER, type SignatureProvider } from '../../integrations/signature/signature.provider'
 import { AuditService } from '../audit/audit.service'
 import { FilesService } from '../files/files.service'
+import { NotificationsService } from '../notifications/notifications.service'
 import { loadAgenda, validateAnswers, type AgendaQuestion } from './agenda'
 import type { SnapshotEntry } from './tally'
 import { LATE_OWNER, REPRESENTATIVE, state } from './votes.service'
@@ -20,6 +21,8 @@ import { LATE_OWNER, REPRESENTATIVE, state } from './votes.service'
 type Answers = BallotStartBody['answers']
 export type CastView = { status: 'CAST'; unit_number: string; cast_at: string; area: number; weight_percent: number }
 
+const SIGNING_WINDOW_MS = 10 * 60_000
+const MAX_PENDING_SIGNINGS = 5
 const notEligible = (message: string) => new AppError(403, ErrorCode.NOT_ELIGIBLE, message)
 const alreadyVoted = () => conflict(ErrorCode.ALREADY_VOTED, 'За это помещение бюллетень уже подан. Изменить голос нельзя: бюллетень подписан ЭЦП')
 
@@ -35,6 +38,7 @@ export class BallotsService {
     private readonly audit: AuditService,
     private readonly crypto: CryptoService,
     private readonly files: FilesService,
+    private readonly notifications: NotificationsService,
     @Inject(SIGNATURE_PROVIDER) private readonly signer: SignatureProvider,
   ) {}
 
@@ -44,10 +48,10 @@ export class BallotsService {
     const user = await asSystem(() => this.db.run((tx) => tx.user.findUniqueOrThrow({ where: { id: userId }, select: { fullName: true, iinHash: true } })))
     if (!user.iinHash) throw new AppError(422, ErrorCode.IDENTITY_REQUIRED, 'Голосовать можно после подтверждения личности через eGov mobile')
     const prepared = await this.db.run(async (tx) => {
-      const { vote, entry, agenda } = await this.eligible(tx, voteId, body.unit_id, body.answers)
-      if (!entry.voters.includes(userId)) {
-        throw notEligible(await this.whyNot(tx, entry, userId))
-      }
+      const { vote, entry, agenda } = await this.eligible(tx, voteId, body.unit_id, body.answers, userId)
+      // Каждое начало — обращение к провайдеру подписи: не больше пяти незавершённых за 10 минут
+      const recent = await tx.ballotSigning.count({ where: { voteId, unitId: body.unit_id, userId, completedAt: null, createdAt: { gt: new Date(Date.now() - SIGNING_WINDOW_MS) } } })
+      if (recent >= MAX_PENDING_SIGNINGS) throw new AppError(429, ErrorCode.RATE_LIMITED, 'Слишком много начатых подписаний. Завершите начатое или подождите 10 минут')
       return { vote, entry, document: await this.document(tx, vote, entry, agenda, body.answers, user.fullName, 'ELECTRONIC') }
     })
     const documentHash = this.hash(prepared.document)
@@ -68,6 +72,7 @@ export class BallotsService {
     const signing = await this.db.run((tx) => tx.ballotSigning.findFirst({ where: { id: signing_id, voteId, userId } }))
     if (!signing) throw notFound('Подписание бюллетеня')
     if (signing.completedAt) throw alreadyVoted()
+    if (signing.expiresAt < new Date()) throw state('Время на подписание истекло. Подпишите бюллетень заново')
     const fetched = await this.signer.fetch(signing.externalId)
     if (fetched.status === 'PENDING') return { status: 'PENDING' }
     if (fetched.status === 'EXPIRED') throw state('Время на подписание истекло. Подпишите бюллетень заново')
@@ -90,11 +95,12 @@ export class BallotsService {
         certValidTo: checked.cert.validTo, verifiedAt: now, verificationResult: { valid: true, issuer: checked.cert.issuer, signed_at: checked.signedAt.toISOString() },
       },
     })))
+    // Подпись по этой процедуре могла уже существовать: принимаем только подпись именно этого бюллетеня
+    if (sig.purpose !== 'BALLOT' || !Buffer.from(sig.documentHash).equals(Buffer.from(documentHash))) throw new AppError(422, ErrorCode.VERIFICATION_FAILED, 'Подпись относится к другому документу')
     return this.db.run(async (tx) => {
       // Повторная проверка под блокировкой: голосование могли закрыть или отменить, пока шло подписание
       await tx.$queryRaw`SELECT id FROM votes WHERE id = ${voteId}::uuid FOR SHARE`
-      const { entry } = await this.eligible(tx, voteId, signing.unitId, signing.answers as Answers)
-      if (!entry.voters.includes(userId)) throw notEligible(await this.whyNot(tx, entry, userId))
+      const { entry } = await this.eligible(tx, voteId, signing.unitId, signing.answers as Answers, userId)
       const ballot = await this.insert(tx, {
         houseId: signing.houseId, voteId, unitId: signing.unitId, userId, voterName: checked.signer.fullName, channel: 'ELECTRONIC', area: entry.area, weight: entry.weight,
         document: signing.document as Prisma.InputJsonValue, documentHash, signatureId: sig.id, ip: meta.ip ?? null, userAgent: meta.userAgent?.slice(0, 300) ?? null,
@@ -115,31 +121,55 @@ export class BallotsService {
     const body = paperBallotBody.parse(input)
     const chairmanId = ctx().userId ?? ''
     const chairman = await asSystem(() => this.db.run((tx) => tx.user.findUniqueOrThrow({ where: { id: chairmanId }, select: { fullName: true } })))
-    return this.db.run(async (tx) => {
+    let paperFor: { title: string; number: string; voters: string[] } | null = null
+    const cast = await this.db.run(async (tx) => {
       await tx.$queryRaw`SELECT id FROM votes WHERE id = ${voteId}::uuid FOR SHARE`
       const { vote, entry, agenda } = await this.eligible(tx, voteId, body.unit_id, body.answers)
       if (vote.legalBasis !== 'ART_43_WRITTEN_SURVEY') throw state('Бумажные бюллетени принимаются только в письменном опросе (ст. 43)')
       const scan = await tx.file.findFirst({ where: { id: body.scan_file_id, uploadedBy: chairmanId, status: 'READY', parentId: null, purpose: 'BALLOT_SCAN' } })
       if (!scan) throw unprocessable(ErrorCode.VALIDATION, 'Скан бюллетеня не загружен или уже приложен к другому', { fields: [{ path: 'scan_file_id', message: 'Загрузите скан' }] })
+      // Один и тот же скан, загруженный дважды, — один бюллетень, а не два
+      if (scan.contentHash) {
+        const reused = await tx.file.count({ where: { parentType: 'BALLOT', contentHash: scan.contentHash, parentId: { in: (await tx.ballot.findMany({ where: { voteId }, select: { id: true } })).map((b) => b.id) } } })
+        if (reused) throw unprocessable(ErrorCode.VALIDATION, 'Этот скан уже приложен к другому бюллетеню', { fields: [{ path: 'scan_file_id', message: 'Скан уже использован' }] })
+      }
+      // Собственник в приложении сейчас подписывает свой бюллетень — бумажный за него не принимается
+      const signing = await tx.ballotSigning.count({ where: { voteId, unitId: body.unit_id, completedAt: null, expiresAt: { gt: new Date() } } })
+      if (signing) throw state('Собственник помещения сейчас подписывает электронный бюллетень')
       const document = { ...(await this.document(tx, vote, entry, agenda, body.answers, body.voter_name, 'PAPER')), entered_by: chairman.fullName, scan: { file_id: scan.id, sha256: scan.contentHash ? Buffer.from(scan.contentHash).toString('hex') : null } }
       const ballot = await this.insert(tx, {
         houseId: vote.houseId, voteId, unitId: body.unit_id, userId: entry.voters.length === 1 ? entry.voters[0]! : null, voterName: body.voter_name, channel: 'PAPER', area: entry.area, weight: entry.weight,
         document, documentHash: this.hash(document), scanFileId: scan.id, enteredBy: chairmanId,
       }, body.answers)
       await this.files.attach(tx, [scan.id], 'BALLOT', ballot.id, chairmanId, 'BALLOT_SCAN')
+      paperFor = { title: vote.title, number: entry.number, voters: entry.voters }
       await this.audit.append(tx, { action: 'vote.paper_ballot', entityType: 'Ballot', entityId: ballot.id, after: { vote: voteId, unit: entry.number, voter_name: body.voter_name, scan: scan.id } })
       return { status: 'CAST' as const, unit_number: entry.number, cast_at: ballot.castAt.toISOString(), area: entry.area, weight_percent: Math.round(entry.weight * 1_000_000) / 10_000 }
     })
+    // Собственник в приложении узнаёт, что за его помещение внесён бумажный голос: подлог не пройдёт незаметно
+    if (paperFor) {
+      const p: { title: string; number: string; voters: string[] } = paperFor
+      await this.notifications.notify({
+        userIds: p.voters, houseId: ctx().houseId ?? '', category: 'VOTES', priority: 'HIGH',
+        title: `Внесён бумажный бюллетень за помещение №${p.number}`,
+        body: `Голосование «${p.title}». Если вы его не заполняли, сообщите в ОСИ и проверьте протокол`, payload: { type: 'vote', id: voteId },
+      })
+    }
+    return cast
   }
 
-  /** Голосование идёт, помещение есть в снимке, бюллетеня за него нет, ответы корректны */
-  private async eligible(tx: Tx, voteId: string, unitId: string, answers: Answers): Promise<{ vote: Vote; entry: SnapshotEntry; agenda: AgendaQuestion[] }> {
+  /**
+   * Голосование идёт, помещение есть в снимке, бюллетеня за него нет, ответы корректны.
+   * Право голоса проверяется раньше, чем «уже голосовали»: иначе любой член дома узнал бы, кто проголосовал
+   */
+  private async eligible(tx: Tx, voteId: string, unitId: string, answers: Answers, voter?: string): Promise<{ vote: Vote; entry: SnapshotEntry; agenda: AgendaQuestion[] }> {
     const vote = await tx.vote.findFirst({ where: { id: voteId }, include: { snapshot: true } })
     if (!vote || vote.status === 'DRAFT') throw notFound('Голосование')
     const now = new Date()
     if (vote.status !== 'ACTIVE' || !vote.snapshot || now >= vote.endsAt!) throw state(vote.status === 'NOTICE_SENT' ? 'Голосование ещё не началось' : 'Голосование завершено: бюллетени больше не принимаются')
     const entry = (vote.snapshot.entries as SnapshotEntry[]).find((e) => e.unit_id === unitId)
     if (!entry) throw notEligible('Помещения нет в реестре голосования')
+    if (voter !== undefined && !entry.voters.includes(voter)) throw notEligible(await this.whyNot(tx, entry, voter))
     if (await tx.ballot.count({ where: { voteId, unitId } })) throw alreadyVoted()
     const agenda = await loadAgenda(tx, voteId)
     const problem = validateAnswers(agenda, answers)

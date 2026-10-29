@@ -144,12 +144,15 @@ export class FilesService {
         return (await tx.chargeCollection.count({ where: { id: file.parentId } })) > 0
       // Материалы к повестке видит каждый член дома, как и само голосование
       case 'VOTE':
-        return (await tx.vote.count({ where: { id: file.parentId } })) > 0
-      // Скан бумажного бюллетеня раскрывает чужой выбор: только правление и собственник этого помещения
+        return (await tx.vote.count({ where: { id: file.parentId, ...(!isBoardRole(role) && { status: { not: 'DRAFT' } }) } })) > 0
+      // Скан бумажного бюллетеня раскрывает чужой выбор
       case 'BALLOT': {
-        if (isBoardRole(role)) return true
-        const b = await tx.ballot.findFirst({ where: { id: file.parentId }, select: { unitId: true } })
-        return !!b && (await tx.unitOwnership.count({ where: { unitId: b.unitId, userId, relation: 'OWNER', verificationStatus: 'VERIFIED' } })) > 0
+        // Председатель вносил бюллетень; кроме него — только тот, кто голосовал за это помещение по снимку реестра
+        if (role === 'CHAIRMAN') return true
+        const b = await tx.ballot.findFirst({ where: { id: file.parentId }, select: { unitId: true, voteId: true } })
+        if (!b) return false
+        const snap = await tx.voteRegistrySnapshot.findFirst({ where: { voteId: b.voteId }, select: { entries: true } })
+        return ((snap?.entries ?? []) as { unit_id: string; voters: string[] }[]).some((e) => e.unit_id === b.unitId && e.voters.includes(userId))
       }
       default:
         return false

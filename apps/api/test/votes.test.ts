@@ -176,6 +176,7 @@ describe('notice', () => {
     expect(sms[0]!.channels).toContain('sms')
 
     expect((await s.chair.patch(`${s.base}/votes/${v.id}`).set('x-step-up-token', s.up).send({ title: 'Другая тема собрания' })).status).toBe(409)
+    expect((await s.chair.patch(`${s.base}/votes/${v.id}`).set('x-step-up-token', s.up).send({ material_file_ids: ['00000000-0000-7000-8000-000000000001'] })).status).toBe(409)
     // Ни сервис, ни прямой запрос не сдвинут срок после уведомления
     await expect(owner.$executeRaw`UPDATE votes SET ends_at = ends_at + interval '1 day' WHERE id = ${v.id}::uuid`).rejects.toThrow(/cannot be changed/)
     await expect(owner.$executeRaw`UPDATE vote_questions SET text = 'Другой вопрос' WHERE vote_id = ${v.id}::uuid`).rejects.toThrow(/frozen/)
@@ -374,6 +375,8 @@ describe('written survey', () => {
     const paper = await s.chair.post(`${s.base}/votes/${survey.id}/paper-ballots`).set('x-step-up-token', s.up)
       .send({ unit_id: s.units[0]!.id, voter_name: 'Сейткали Айгерим Нурлановна', scan_file_id: secondScan, answers: answer })
     expect(paper.status).toBe(201)
+    // Собственник в приложении узнаёт о бумажном бюллетене за своё помещение
+    expect(await owner.notification.count({ where: { userId: s.big.id, title: { contains: 'бумажный бюллетень' } } })).toBe(1)
     expect((await vote(s, s.second, survey.id, s.units[1]!.id, answer)).status).toBe(200)
     expect(await owner.auditLog.count({ where: { action: 'vote.paper_ballot' } })).toBe(1)
     await closeAll(Date.now() + 3 * DAY)
@@ -409,12 +412,38 @@ describe('reminders and isolation', () => {
     expect((await b.get(`${a.base}/votes/${v.id}`)).status).toBe(404)
   })
 
-  it('cancels an active vote with a reason and never reveals its tally', async () => {
+  it('reveals the tally of a cancelled vote so cancelling a losing vote hides nothing', async () => {
     const s = await setup()
-    const v = await active(s, { results_visible_during: true })
+    const v = await active(s)
     await vote(s, s.big, v.id, s.units[0]!.id, [{ question_id: v.questions[0]!.id, option_ids: [optionOf(v, 'FOR')] }])
     expect((await s.chair.post(`${s.base}/votes/${v.id}/cancel`).set('x-step-up-token', s.up).send({ reason: 'Ошибка в повестке' })).body.status).toBe('CANCELLED')
     const r = await s.big.agent.get(`${s.base}/votes/${v.id}/results`)
-    expect(r.body).toMatchObject({ hidden: true, questions: [] })
+    expect(r.body).toMatchObject({ hidden: false, questions: [{ options: [{ kind: 'FOR', area: 120 }, {}, {}] }] })
+  })
+
+  it('refuses to cancel a vote once its time is up, and to close it before', async () => {
+    const s = await setup()
+    const v = await draft(s)
+    const now = Date.now()
+    // Срок истёк, а планировщик ещё не дошёл: голосование формально ACTIVE
+    await owner.vote.update({ where: { id: v.id }, data: { status: 'NOTICE_SENT', noticeSentAt: new Date(now - 9 * DAY), startsAt: new Date(now - 3 * DAY), endsAt: new Date(now - 60_000) } })
+    await owner.vote.update({ where: { id: v.id }, data: { status: 'ACTIVE', activatedAt: new Date(now - 3 * DAY) } })
+    const res = await s.chair.post(`${s.base}/votes/${v.id}/cancel`).set('x-step-up-token', s.up).send({ reason: 'Передумали голосовать' })
+    expect(res.status).toBe(409)
+    await expect(owner.$executeRaw`UPDATE votes SET status = 'CANCELLED', cancelled_at = now(), cancel_reason = 'в обход сервиса' WHERE id = ${v.id}::uuid`).rejects.toThrow(/cannot be cancelled/)
+
+    const early = await draft(s)
+    await noticedWeekAgo(early.id)
+    await s.chair.post(`${s.base}/votes/${early.id}/activate`).set('x-step-up-token', s.up).expect(200)
+    await expect(owner.$executeRaw`UPDATE votes SET status = 'CLOSED', closed_at = now() WHERE id = ${early.id}::uuid`).rejects.toThrow(/before its end/)
+  })
+
+  it('does not reveal to a non-owner whether a unit has already voted', async () => {
+    const s = await setup()
+    const v = await active(s)
+    const answer = [{ question_id: v.questions[0]!.id, option_ids: [optionOf(v, 'FOR')] }]
+    await vote(s, s.big, v.id, s.units[0]!.id, answer)
+    const probe = await s.second.agent.post(`${s.base}/votes/${v.id}/ballot/start`).send({ unit_id: s.units[0]!.id, answers: answer })
+    expect(probe.status).toBe(403)
   })
 })
