@@ -320,23 +320,30 @@ API их не блокирует — иначе пришлось бы дубли
 
 ## 11. Голосования
 
+Пути — под `/houses/:houseId`, как у остальных ресурсов дома: скоуп `house` проверяется по пути.
+
 | Метод | Путь | Роль | Скоуп | Step-up | Лимит | Аудит |
 |---|---|---|---|---|---|---|
-| GET | `/houses/:id/votes` | член дома | `house` | нет | `read` | нет |
-| POST | `/houses/:id/votes` | chairman | `house` | да | `write` | да |
-| GET | `/votes/:id` | член дома | `house` | нет | `read` | нет |
-| PATCH | `/votes/:id` | chairman | `house` | да | `write` | да |
-| POST | `/votes/:id/send-notice` | chairman | `house` | да | `write` | да |
-| POST | `/votes/:id/activate` | chairman | `house` | да | `write` | да |
-| POST | `/votes/:id/cancel` | chairman | `house` | да | `write` | да |
-| POST | `/votes/:id/ballot/start` | resident-owner | `house` | нет | `write` | да |
-| POST | `/votes/:id/ballot/complete` | resident-owner | `house` | нет | `write` | да |
-| GET | `/votes/:id/results` | член дома | `house` | нет | `read` | нет |
-| POST | `/votes/:id/close` | chairman | `house` | да | `write` | да |
-| GET | `/votes/:id/protocol` | член дома | `house` | нет | `read` | нет |
-| POST | `/protocols/:id/sign` | chairman, secretary | `house` | да | `write` | да |
+| GET | `/votes` | член дома | `house` | нет | `read` | нет |
+| GET | `/votes/secretary-candidates` | chairman | `house` | нет | `read` | нет |
+| POST | `/votes` | chairman | `house` | да | `write` | да |
+| GET | `/votes/:voteId` | член дома | `house` | нет | `read` | нет |
+| PATCH | `/votes/:voteId` | chairman | `house` | да | `write` | да |
+| POST | `/votes/:voteId/send-notice` | chairman | `house` | да | `write` | да |
+| POST | `/votes/:voteId/activate` | chairman | `house` | да | `write` | да |
+| POST | `/votes/:voteId/cancel` | chairman | `house` | да | `write` | да |
+| POST | `/votes/:voteId/remind` | chairman | `house` | нет | `write` | да |
+| POST | `/votes/:voteId/ballot/start` | собственник | `house` | нет | `write` | нет |
+| POST | `/votes/:voteId/ballot/complete` | собственник | `house` | нет | `write` | да |
+| POST | `/votes/:voteId/paper-ballots` | chairman | `house` | да | `write` | да |
+| GET | `/votes/:voteId/results` | член дома | `house` | нет | `read` | нет |
+| POST | `/votes/:voteId/close` | chairman | `house` | да | `write` | да |
+| GET | `/votes/:voteId/protocol` | член дома | `house` | нет | `read` | нет |
+| POST | `/protocols/:protocolId/sign` | chairman, секретарь | `house` | нет | `write` | да |
+| POST | `/protocols/:protocolId/sign/complete` | chairman, секретарь | `house` | нет | `write` | да |
+| POST | `/protocols/:protocolId/publish` | chairman | `house` | да | `write` | да |
 
-**`POST /houses/:id/votes`** отвечает `422`, если `house.is_voting_ready = false`:
+**`POST /votes`** отвечает `422 HOUSE_NOT_VOTING_READY`, если у голосующих помещений нет площади:
 
 ```json
 {
@@ -348,11 +355,23 @@ API их не блокирует — иначе пришлось бы дубли
 }
 ```
 
-**`POST /votes/:id/activate`** отвечает `422`, если с момента `notice_sent_at` прошло менее 5 календарных дней.
+Порог (`threshold`) выводится из `decision_type` и из запроса не принимается. Принимаются формы `ART_44_ELECTRONIC` и `ART_43_WRITTEN_SURVEY`; очное собрание (ст. 42) система не проводит. У вопросов с выбором «Воздержался» добавляется автоматически, у `YES_NO` варианты фиксированные.
 
-**`GET /votes/:id/results`** до закрытия отдаёт только явку и кворум, без распределения голосов — если `results_visible_during = false`. Иначе ход голосования влияет на тех, кто ещё не проголосовал.
+**`PATCH /votes/:voteId`.** В черновике меняется всё, повестка заменяется целиком. После уведомления — только секретарь (пока он не подписал протокол) и новые материалы (до старта); остальное — `409 VOTE_STATE`. Это же держит триггер в базе.
 
-**Подача бюллетеня — двухшаговая:** `ballot/start` формирует документ бюллетеня и инициирует подписание, `ballot/complete` вызывается после подписания, и сервер сам забирает и проверяет подпись. Вес голоса **не принимается от клиента** — он берётся из `VoteRegistrySnapshot`.
+**`POST /votes/:voteId/send-notice`** `{starts_at, ends_at}` отвечает `422 NOTICE_TOO_SHORT`, если начало раньше чем через 5 календарных дней; `details.min_starts_at` — минимальная дата. Длительность — от 24 часов до 60 дней. Уведомление получают все члены дома; подтверждённым собственникам — с SMS. Список уведомлённых сохраняется для протокола.
+
+**`POST /votes/:voteId/activate`** — не раньше `starts_at` (иначе `409`). Обычно голосование стартует само: планировщик раз в 5 минут переводит голосования в `ACTIVE` по `starts_at` и закрывает по `ends_at` с формированием протокола. При старте создаётся снимок реестра. `close` вручную — только после `ends_at`.
+
+**`POST /votes/:voteId/remind`** — всем непроголосовавшим из снимка, не чаще раза в сутки. Автоматически — за 3 дня, сутки и 4 часа до конца.
+
+**`GET /votes/:voteId/results`** до закрытия отдаёт только явку и кворум (`hidden: true`), если `results_visible_during = false`. Итоги отменённого голосования не раскрываются никогда.
+
+**Подача бюллетеня — двухшаговая.** `ballot/start` `{unit_id, answers}` формирует документ бюллетеня и начинает подписание, возвращает `signing_id` и QR/deeplink. `ballot/complete` `{signing_id}` вызывается после подписания: сервер сам забирает подпись, проверяет её и сверяет ИИН из сертификата с подтверждённой личностью. Ответ `{status: "PENDING"}` — подпись ещё не готова. Голосует собственник из снимка реестра (`403 NOT_ELIGIBLE` иначе), второй бюллетень помещения — `409 ALREADY_VOTED`. Вес **не принимается от клиента** — он из `VoteRegistrySnapshot`.
+
+**`POST /votes/:voteId/paper-ballots`** `{unit_id, voter_name, scan_file_id, answers}` — только в письменном опросе; скан загружается с `purpose: BALLOT_SCAN`.
+
+**Подпись протокола без step-up.** Секретарь — обычно жилец без второго фактора, а ЭЦП с проверкой ИИН на сервере сильнее кода из приложения. Секретарь видит протокол до публикации; остальные жильцы — после.
 
 ---
 

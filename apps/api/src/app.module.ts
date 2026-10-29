@@ -79,6 +79,11 @@ import { ReportsController } from './modules/finance/reports.controller'
 import { ReportsScheduler } from './modules/finance/reports.scheduler'
 import { ReportsService } from './modules/finance/reports.service'
 import { OCR_PROVIDER, TextLayerOcrProvider } from './integrations/ocr/ocr.provider'
+import { BallotsService } from './modules/votes/ballots.service'
+import { ProtocolsService } from './modules/votes/protocols.service'
+import { VotesController } from './modules/votes/votes.controller'
+import { VotesScheduler } from './modules/votes/votes.scheduler'
+import { VotesService } from './modules/votes/votes.service'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
 function signatureProvider(): SignatureProvider {
@@ -103,7 +108,7 @@ function storageProviderFactory(): StorageProvider {
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
     AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController, RecurringController,
-    BudgetCategoriesController, FinanceController, ChargesController, PaymentsController, OverviewController, ReportsController,
+    BudgetCategoriesController, FinanceController, ChargesController, PaymentsController, OverviewController, ReportsController, VotesController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -114,6 +119,7 @@ function storageProviderFactory(): StorageProvider {
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
     FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService, RecurringService, RecurringScheduler,
     CategoriesService, AccountsService, TransactionsService, ChargesService, ChargesScheduler, ReceiptsService, PaymentsService, OverviewService, DebtorsService, ReportsService, ReportsScheduler,
+    VotesService, BallotsService, ProtocolsService, VotesScheduler,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },

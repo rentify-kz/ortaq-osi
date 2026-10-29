@@ -155,6 +155,10 @@ model House {
   receipts      Receipt[]
   payments      Payment[]
   reports       Report[]
+  votes         Vote[]
+
+  /// Счётчик номеров протоколов собраний: «протокол №5»
+  protocolSeq Int @default(0) @map("protocol_seq")
 
   /// Счётчик номеров операций: «операция №12» в журнале и отчёте
   transactionSeq Int @default(0) @map("transaction_seq")
@@ -680,6 +684,8 @@ enum FilePurpose {
   TASK_PHOTO
   FINANCE_DOCUMENT
   PAYMENT_RECEIPT
+  VOTE_MATERIAL
+  BALLOT_SCAN
 }
 
 enum FileStatus {
@@ -1422,4 +1428,261 @@ model Report {
 
   @@unique([houseId, type, period])
   @@map("reports")
+}
+
+// ───────── Фаза 4: голосования (docs/09) ─────────
+
+enum VoteLegalBasis {
+  ART_42_MEETING
+  ART_43_WRITTEN_SURVEY
+  ART_44_ELECTRONIC
+}
+
+enum DecisionType {
+  ROUTINE
+  CURRENT_REPAIR
+  TARIFF_CHANGE
+  TARGETED_CONTRIBUTION
+  CHAIRMAN_ELECTION
+  MAJOR_EXPENSE
+  CAPITAL_REPAIR
+  MANAGEMENT_CHANGE
+  LIQUIDATION
+  COMMON_PROPERTY_DISPOSAL
+}
+
+enum VoteThreshold {
+  SIMPLE_MAJORITY
+  TWO_THIRDS
+}
+
+enum QuorumBasis {
+  BY_AREA
+  BY_UNIT
+}
+
+enum VoteStatus {
+  DRAFT
+  NOTICE_SENT
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum QuestionType {
+  YES_NO
+  SINGLE_CHOICE
+  MULTI_CHOICE
+}
+
+enum OptionKind {
+  FOR
+  AGAINST
+  ABSTAIN
+  CHOICE
+}
+
+enum BallotChannel {
+  ELECTRONIC
+  PAPER
+}
+
+enum ProtocolStatus {
+  AWAITING_SIGNATURES
+  SIGNED
+  PUBLISHED
+}
+
+model Vote {
+  id                   String         @id @default(uuid(7)) @db.Uuid
+  houseId              String         @map("house_id") @db.Uuid
+  house                House          @relation(fields: [houseId], references: [id])
+  title                String
+  description          String?
+  legalBasis           VoteLegalBasis @map("legal_basis")
+  decisionType         DecisionType   @map("decision_type")
+  /// Выводится из типа решения при создании и хранится: смена закона не переписывает прошедшие голосования
+  threshold            VoteThreshold
+  quorumBasis          QuorumBasis    @default(BY_AREA) @map("quorum_basis")
+  resultsVisibleDuring Boolean        @default(false) @map("results_visible_during")
+  status               VoteStatus     @default(DRAFT)
+  /// Подписывает протокол вместе с председателем
+  secretaryUserId      String?        @map("secretary_user_id") @db.Uuid
+  noticeSentAt         DateTime?      @map("notice_sent_at") @db.Timestamptz
+  startsAt             DateTime?      @map("starts_at") @db.Timestamptz
+  endsAt               DateTime?      @map("ends_at") @db.Timestamptz
+  activatedAt          DateTime?      @map("activated_at") @db.Timestamptz
+  closedAt             DateTime?      @map("closed_at") @db.Timestamptz
+  cancelledAt          DateTime?      @map("cancelled_at") @db.Timestamptz
+  cancelledBy          String?        @map("cancelled_by") @db.Uuid
+  cancelReason         String?        @map("cancel_reason")
+  /// Ручное «напомнить непроголосовавшим» — не чаще раза в сутки
+  remindedAt           DateTime?      @map("reminded_at") @db.Timestamptz
+  createdBy            String         @map("created_by") @db.Uuid
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  questions VoteQuestion[]
+  snapshot  VoteRegistrySnapshot?
+  notices   VoteNotice[]
+  signings  BallotSigning[]
+  ballots   Ballot[]
+  protocol  Protocol?
+
+  @@index([houseId, status])
+  @@map("votes")
+}
+
+model VoteQuestion {
+  id      String       @id @default(uuid(7)) @db.Uuid
+  houseId String       @map("house_id") @db.Uuid
+  voteId  String       @map("vote_id") @db.Uuid
+  vote    Vote         @relation(fields: [voteId], references: [id])
+  order   Int
+  text    String
+  type    QuestionType
+  options VoteOption[]
+
+  @@unique([voteId, order])
+  @@map("vote_questions")
+}
+
+model VoteOption {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  houseId    String       @map("house_id") @db.Uuid
+  questionId String       @map("question_id") @db.Uuid
+  question   VoteQuestion @relation(fields: [questionId], references: [id])
+  order      Int
+  text       String
+  kind       OptionKind
+
+  @@unique([questionId, order])
+  @@map("vote_options")
+}
+
+/// Замороженный реестр на момент старта: веса голосов берутся только отсюда (docs/09 §6)
+model VoteRegistrySnapshot {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  houseId     String   @map("house_id") @db.Uuid
+  voteId      String   @unique @map("vote_id") @db.Uuid
+  vote        Vote     @relation(fields: [voteId], references: [id])
+  totalArea   Decimal  @map("total_area") @db.Decimal(12, 2)
+  totalUnits  Int      @map("total_units")
+  /// [{unit_id, number, area, weight, voters: [user_id]}]
+  entries     Json
+  /// SHA-256 канонических entries: снимок проверяем на неизменность при подсчёте и в протоколе
+  entriesHash Bytes    @map("entries_hash")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("vote_registry_snapshots")
+}
+
+/// Кому и когда ушло уведомление о собрании: список прикладывается к протоколу
+model VoteNotice {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  houseId     String   @map("house_id") @db.Uuid
+  voteId      String   @map("vote_id") @db.Uuid
+  vote        Vote     @relation(fields: [voteId], references: [id])
+  userId      String   @map("user_id") @db.Uuid
+  /// Помещения, собственником которых он подтверждён; пусто — не собственник
+  unitNumbers String[] @map("unit_numbers")
+  notifiedAt  DateTime @map("notified_at") @db.Timestamptz
+
+  @@unique([voteId, userId])
+  @@map("vote_notices")
+}
+
+/// Начатое подписание бюллетеня: документ и выбор фиксируются до подписи, бюллетень — только после проверки
+model BallotSigning {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  houseId      String    @map("house_id") @db.Uuid
+  voteId       String    @map("vote_id") @db.Uuid
+  vote         Vote      @relation(fields: [voteId], references: [id])
+  unitId       String    @map("unit_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  provider     String
+  externalId   String    @map("external_id")
+  document     Json
+  documentHash Bytes     @map("document_hash")
+  /// [{question_id, option_ids}]
+  answers      Json
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+
+  @@index([voteId, userId])
+  @@map("ballot_signings")
+}
+
+/// Бюллетень. Append-only: у приложения нет UPDATE и DELETE (docs/09 §8)
+model Ballot {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  houseId      String         @map("house_id") @db.Uuid
+  voteId       String         @map("vote_id") @db.Uuid
+  vote         Vote           @relation(fields: [voteId], references: [id])
+  unitId       String         @map("unit_id") @db.Uuid
+  /// Кто подал. У бумажного — собственник из снимка, если известен
+  userId       String?        @map("user_id") @db.Uuid
+  voterName    String         @map("voter_name")
+  channel      BallotChannel
+  /// Площадь и доля из снимка. Считаются сервером, из запроса не принимаются
+  area         Decimal        @db.Decimal(8, 2)
+  weight       Decimal        @db.Decimal(10, 6)
+  /// Подписанный документ бюллетеня и его хеш
+  document     Json
+  documentHash Bytes          @map("document_hash")
+  signatureId  String?        @map("signature_id") @db.Uuid
+  /// Скан бумажного бюллетеня (ст. 43)
+  scanFileId   String?        @map("scan_file_id") @db.Uuid
+  /// Бумажный бюллетень внёс председатель — всегда в аудите и в протоколе
+  enteredBy    String?        @map("entered_by") @db.Uuid
+  castAt       DateTime       @default(now()) @map("cast_at") @db.Timestamptz
+  ip           String?
+  userAgent    String?        @map("user_agent")
+  answers      BallotAnswer[]
+
+  @@unique([voteId, unitId])
+  @@map("ballots")
+}
+
+model BallotAnswer {
+  id         String @id @default(uuid(7)) @db.Uuid
+  houseId    String @map("house_id") @db.Uuid
+  ballotId   String @map("ballot_id") @db.Uuid
+  ballot     Ballot @relation(fields: [ballotId], references: [id])
+  questionId String @map("question_id") @db.Uuid
+  optionId   String @map("option_id") @db.Uuid
+
+  @@unique([ballotId, optionId])
+  @@map("ballot_answers")
+}
+
+/// Протокол формируется при закрытии и дальше не меняется: меняются только подписи и публикация
+model Protocol {
+  id                   String         @id @default(uuid(7)) @db.Uuid
+  houseId              String         @map("house_id") @db.Uuid
+  voteId               String         @unique @map("vote_id") @db.Uuid
+  vote                 Vote           @relation(fields: [voteId], references: [id])
+  number               Int
+  content              Json
+  /// SHA-256 канонического содержимого: его подписывают ЭЦП председатель и секретарь
+  contentHash          Bytes          @map("content_hash")
+  status               ProtocolStatus @default(AWAITING_SIGNATURES)
+  quorumReached        Boolean        @map("quorum_reached")
+  quorumPercent        Decimal        @map("quorum_percent") @db.Decimal(5, 2)
+  results              Json
+  chairmanSignatureId  String?        @map("chairman_signature_id") @db.Uuid
+  secretarySignatureId String?        @map("secretary_signature_id") @db.Uuid
+  /// {CHAIRMAN: {external_id, user_id}, SECRETARY: {...}}
+  pendingSigning       Json           @default("{}") @map("pending_signing")
+  signedAt             DateTime?      @map("signed_at") @db.Timestamptz
+  publishedAt          DateTime?      @map("published_at") @db.Timestamptz
+  publishedBy          String?        @map("published_by") @db.Uuid
+  /// Хранить не менее 5 лет (docs/09 §7)
+  retentionUntil       DateTime       @map("retention_until") @db.Date
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([houseId, number])
+  @@map("protocols")
 }

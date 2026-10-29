@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service'
 import { isBoardRole, visibleRequestsWhere } from '../requests/visibility'
 import { reencodeImage, sniffImage } from './images'
 
-export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION' | 'CHARGE_COLLECTION' | 'RECEIPT'
+export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION' | 'CHARGE_COLLECTION' | 'RECEIPT' | 'VOTE' | 'BALLOT'
 
 const rejected = (message: string) => new AppError(422, ErrorCode.FILE_REJECTED, message)
 
@@ -36,6 +36,7 @@ export class FilesService {
     const houseId = ctx().houseId ?? ''
     // Финансовые документы вносит правление; жильцу этот путь (и PDF вместе с ним) не нужен
     if (body.purpose === 'FINANCE_DOCUMENT' && !isBoardRole(ctx().role)) throw forbidden('Финансовые документы загружают председатель и бухгалтер')
+    if ((body.purpose === 'VOTE_MATERIAL' || body.purpose === 'BALLOT_SCAN') && ctx().role !== 'CHAIRMAN') throw forbidden('Материалы и бумажные бюллетени загружает председатель')
     // Сначала во «входящие»: до проверки файл нигде не показывается и ни к чему не привязан
     const storageKey = `incoming/${houseId}/${randomUUID()}`
     const file = await this.db.run((tx) =>
@@ -59,7 +60,7 @@ export class FilesService {
 
     const original = await this.storage.read(file.storageKey, MAX_UPLOAD_BYTES)
     if (!original) throw unprocessable(ErrorCode.FILE_NOT_UPLOADED, 'Файл не загружен или больше 15 МБ')
-    if ((file.purpose === 'FINANCE_DOCUMENT' || file.purpose === 'PAYMENT_RECEIPT') && original.toString('latin1', 0, 5) === '%PDF-') return this.finalizePdf(file, original)
+    if (file.purpose !== 'REQUEST_PHOTO' && file.purpose !== 'TASK_PHOTO' && original.toString('latin1', 0, 5) === '%PDF-') return this.finalizePdf(file, original)
     if (!sniffImage(original)) return this.reject(file, 'Это не фотография: поддерживаются JPEG, PNG и WebP')
 
     let image: Awaited<ReturnType<typeof reencodeImage>>
@@ -141,6 +142,15 @@ export class FilesService {
         return isBoardRole(role) || file.uploadedBy === userId
       case 'CHARGE_COLLECTION':
         return (await tx.chargeCollection.count({ where: { id: file.parentId } })) > 0
+      // Материалы к повестке видит каждый член дома, как и само голосование
+      case 'VOTE':
+        return (await tx.vote.count({ where: { id: file.parentId } })) > 0
+      // Скан бумажного бюллетеня раскрывает чужой выбор: только правление и собственник этого помещения
+      case 'BALLOT': {
+        if (isBoardRole(role)) return true
+        const b = await tx.ballot.findFirst({ where: { id: file.parentId }, select: { unitId: true } })
+        return !!b && (await tx.unitOwnership.count({ where: { unitId: b.unitId, userId, relation: 'OWNER', verificationStatus: 'VERIFIED' } })) > 0
+      }
       default:
         return false
     }

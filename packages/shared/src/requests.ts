@@ -7,11 +7,11 @@ const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max
 
 /* ───────── файлы ───────── */
 
-export const FilePurpose = ['REQUEST_PHOTO', 'TASK_PHOTO', 'FINANCE_DOCUMENT', 'PAYMENT_RECEIPT'] as const
+export const FilePurpose = ['REQUEST_PHOTO', 'TASK_PHOTO', 'FINANCE_DOCUMENT', 'PAYMENT_RECEIPT', 'VOTE_MATERIAL', 'BALLOT_SCAN'] as const
 export type FilePurpose = (typeof FilePurpose)[number]
 
 /** Фото с телефона. HEIC клиент конвертирует в JPEG при выборе: сервер его не декодирует.
- *  PDF — только для финансовых документов: акты и платёжки чаще приходят файлом, а не снимком */
+ *  PDF — для документов: акты, платёжки, чеки, материалы и сканы бюллетеней чаще приходят файлом, а не снимком */
 export const UPLOAD_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 export const MAX_REQUEST_PHOTOS = 5
@@ -22,7 +22,7 @@ export const uploadUrlBody = z.object({
   mime_type: z.enum(UPLOAD_MIME),
   size_bytes: z.number().int().positive().max(MAX_UPLOAD_BYTES, 'Файл больше 15 МБ'),
   name: trimmed(1, 200),
-}).refine((b) => b.mime_type !== 'application/pdf' || b.purpose === 'FINANCE_DOCUMENT' || b.purpose === 'PAYMENT_RECEIPT', { path: ['mime_type'], message: 'PDF принимается только для финансовых документов и чеков' })
+}).refine((b) => b.mime_type !== 'application/pdf' || b.purpose !== 'REQUEST_PHOTO' && b.purpose !== 'TASK_PHOTO', { path: ['mime_type'], message: 'PDF принимается только для документов, чеков и материалов голосования' })
 export type UploadUrlBody = z.infer<typeof uploadUrlBody>
 
 export type UploadUrlResponse = { file_id: string; upload_url: string; method: 'PUT'; headers: Record<string, string>; expires_at: string }

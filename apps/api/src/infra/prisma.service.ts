@@ -21,6 +21,7 @@ const HOUSE_SCOPED = new Set<string>([
   'OwnerRegistryEntry', 'RegistryImport', 'Announcement', 'AnnouncementTarget', 'AnnouncementRead', 'StaffMember', 'Contractor',
   'File', 'Request', 'RequestStage', 'RequestEvent', 'RequestFollower', 'Task', 'TaskCompletion', 'RecurringTaskTemplate',
   'FinanceAccount', 'Transaction', 'TransactionDocument', 'Tariff', 'ChargeCollection', 'Charge', 'ChargeRun', 'Receipt', 'Payment', 'Report',
+  'Vote', 'VoteQuestion', 'VoteOption', 'VoteRegistrySnapshot', 'VoteNotice', 'BallotSigning', 'Ballot', 'BallotAnswer', 'Protocol',
 ])
 
 const WHERE_OPERATIONS = new Set<string>([

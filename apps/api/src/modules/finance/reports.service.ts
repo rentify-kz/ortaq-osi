@@ -4,6 +4,7 @@ import {
   ErrorCode, generateReportBody, type GenerateReportBody, type ReportIssue, type ReportListItem, type ReportRow, type ReportView, type SigningStartView,
 } from '@ortaq/shared'
 import { createHash } from 'node:crypto'
+import { canonical } from '../../common/canonical'
 import { asSystem, ctx } from '../../common/context'
 import { AppError, conflict, forbidden, notFound, unprocessable } from '../../common/errors'
 import { CryptoService } from '../../infra/crypto.service'
@@ -28,13 +29,6 @@ const state = (message: string) => conflict(ErrorCode.REPORT_STATE, message)
 export function reportDueDate(p: string): Date {
   const [y, m] = p.split('-').map(Number)
   return new Date(Date.UTC(y!, m!, 20))
-}
-
-/** Канонический вид: ключи по алфавиту — одинаковые данные дают одинаковый хеш на любой машине */
-function canonical(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
-  if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`
-  return JSON.stringify(v)
 }
 
 /**
