@@ -120,6 +120,9 @@ const endpoints: [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: () 
   ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/confirm`, BOARD],
   ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/reject`, BOARD],
   ['post', () => `/houses/${houseId}/receipts/scan`, BOARD],
+  ['get', () => `/houses/${houseId}/finance/overview`, ALL],
+  ['get', () => `/houses/${houseId}/debtors`, BOARD],
+  ['post', () => `/houses/${houseId}/debtors/remind`, BOARD],
 ]
 
 describe('access matrix', () => {

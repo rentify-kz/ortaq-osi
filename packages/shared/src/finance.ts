@@ -325,3 +325,39 @@ export type PaymentView = {
 }
 
 export type ReceiptScanView = { receipt_id: string; recognized: ReceiptFields | null; duplicate: boolean }
+
+/* ───────── дашборд и должники (docs/10 §6, §8) ───────── */
+
+export const overviewQuery = z.object({ period: period.optional() })
+export type OverviewQuery = z.input<typeof overviewQuery>
+
+export type CategoryTotal = { code: string; name: string; amount: number; transaction_count: number }
+
+/** Одна структура для жильца и правления: цифры те же, что попадут в отчёт */
+export type FinanceOverview = {
+  period: string
+  accounts: { type: AccountType; bank_name: string; balance: number }[]
+  income_total: number
+  expense_total: number
+  /** Доля оплаченного от начисленного за месяц, %. null — начислений не было */
+  collection_rate: number | null
+  income_by_category: CategoryTotal[]
+  expense_by_category: CategoryTotal[]
+  months: { period: string; income: number; expense: number }[]
+  /** Только правлению */
+  board?: { drafts: number; missing_documents: number; payments_to_review: number; debt_total: number }
+}
+
+export type DebtLevel = 'REMIND' | 'REPEAT' | 'PRETRIAL'
+export type DebtorView = {
+  unit: { id: string; number: string; entrance: number | null }
+  owners: { id: string; name: string }[]
+  debt: number
+  months: number
+  oldest_period: string
+  level: DebtLevel
+  last_reminded_at: string | null
+}
+
+export const remindDebtorsBody = z.object({ unit_ids: z.array(z.uuid()).min(1).max(500) })
+export type RemindDebtorsBody = z.infer<typeof remindDebtorsBody>
