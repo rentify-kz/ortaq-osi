@@ -2,7 +2,7 @@ import { forwardRef, type ComponentRef } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { TabList, TabSlot, TabTrigger, Tabs, type TabListProps, type TabTriggerSlotProps } from 'expo-router/ui'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Building2, ClipboardList, House, ListTodo, UserRound, type LucideIcon } from 'lucide-react-native'
+import { Building2, ClipboardList, House, ListTodo, UserRound, Wallet, type LucideIcon } from 'lucide-react-native'
 import { useHouse } from '../../lib/session'
 import { color, font, MAX_WIDTH, radius, space } from '../../theme'
 
@@ -48,6 +48,8 @@ export default function TabsLayout() {
           {worker
             ? <TabTrigger name="tasks" href="/tasks" asChild><TabButton icon={ListTodo} label="Задачи" /></TabTrigger>
             : <TabTrigger name="requests" href="/requests" asChild><TabButton icon={ClipboardList} label="Заявки" /></TabTrigger>}
+          {/* Оплата — у всех, кроме работника: начисления идут собственникам помещений */}
+          {!worker && <TabTrigger name="payments" href="/payments" asChild><TabButton icon={Wallet} label="Оплата" /></TabTrigger>}
           <TabTrigger name="house" href="/house" asChild><TabButton icon={Building2} label="Дом" /></TabTrigger>
           <TabTrigger name="profile" href="/profile" asChild><TabButton icon={UserRound} label="Профиль" /></TabTrigger>
         </TabBar>
