@@ -1,5 +1,7 @@
 import { Linking, Pressable, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
+import type { VoteListItem } from '@ortaq/shared'
+import { VoteRow } from '../../ui/votes'
 import { Building2, Phone, UserRound } from 'lucide-react-native'
 import { api } from '../../lib/api'
 import { formatPhone } from '../../lib/format'
@@ -28,11 +30,19 @@ function CallButton({ phone, who }: { phone: string; who: string }) {
 export default function HouseTab() {
   const house = useHouse()
   const staff = useQuery({ queryKey: ['house', house?.id, 'staff'], queryFn: () => api<Staff[]>(`/houses/${house!.id}/staff`), enabled: !!house })
+  const votes = useQuery({ queryKey: ['house', house?.id, 'votes'], queryFn: () => api<VoteListItem[]>(`/houses/${house!.id}/votes`), enabled: !!house })
   const contractors = useQuery({ queryKey: ['house', house?.id, 'contractors'], queryFn: () => api<Contractor[]>(`/houses/${house!.id}/contractors`), enabled: !!house })
 
   return (
-    <Screen bottomInset={TAB_BAR_SPACE} refreshing={staff.isRefetching} onRefresh={() => { void staff.refetch(); void contractors.refetch() }}>
-      <Title sub="Кто обслуживает дом и как с ними связаться">Дом</Title>
+    <Screen bottomInset={TAB_BAR_SPACE} refreshing={staff.isRefetching} onRefresh={() => { void staff.refetch(); void contractors.refetch(); void votes.refetch() }}>
+      <Title sub="Собрания, персонал и подрядчики">Дом</Title>
+
+      {(votes.data?.length ?? 0) > 0 && (
+        <>
+          <H2>Собрания и голосования</H2>
+          {votes.data!.map((v) => <VoteRow key={v.id} v={v} />)}
+        </>
+      )}
 
       <H2>Персонал</H2>
       {staff.isPending && <Skeleton rows={2} />}

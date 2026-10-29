@@ -1,22 +1,14 @@
 import { useState } from 'react'
-import { Linking, Platform, View } from 'react-native'
+import { View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { BadgeCheck, CircleCheck, Clock, ExternalLink, ShieldCheck } from 'lucide-react-native'
 import type { VerificationOutcome, VerificationStatusResponse } from '@ortaq/shared'
 import { api, ApiError } from '../lib/api'
+import { openEgov } from '../lib/egov'
 import { useHouse } from '../lib/session'
 import { color, space } from '../theme'
 import { Button, Card, ErrorNote, H2, IconBadge, Screen, T, Title } from '../ui/kit'
-
-/** eGov mobile — отдельное приложение. В веб-сборке его заменяет страница-заглушка: открываем её в новой вкладке, чтобы не потерять эту */
-function openEgov(url: string) {
-  if (Platform.OS === 'web') {
-    window.open(url, '_blank', 'noopener,noreferrer')
-    return
-  }
-  void Linking.openURL(url)
-}
 
 type Started = { verification_id: string; qr_url: string; deeplink: string; expires_at: string }
 type Result = Extract<VerificationStatusResponse['result'], { units: unknown }>

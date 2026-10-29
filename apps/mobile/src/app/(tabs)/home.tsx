@@ -2,15 +2,17 @@ import { Pressable, View } from 'react-native'
 import { router } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Megaphone, Pin, ShieldCheck, Vote } from 'lucide-react-native'
+import type { VoteListItem } from '@ortaq/shared'
 import { api } from '../../lib/api'
 import { when } from '../../lib/format'
 import { useHouse, useMyPlace } from '../../lib/session'
 import { color, radius, space, TAB_BAR_SPACE } from '../../theme'
 import { Button, Card, Empty, ErrorNote, H2, IconBadge, Screen, Skeleton, T, Tag, Title } from '../../ui/kit'
+import { VoteRow } from '../../ui/votes'
 
 export type Announcement = { id: string; title: string; body: string; pinned: boolean; published_at: string; is_read: boolean }
 
-/** Главная жильца: право голоса и что нового в доме. Голосования и заявки придут в следующих фазах */
+/** Главная жильца: право голоса, что сейчас решается в доме и что нового */
 export default function Home() {
   const house = useHouse()
   const place = useMyPlace(house?.id)
@@ -19,11 +21,14 @@ export default function Home() {
     queryFn: () => api<Announcement[]>(`/houses/${house!.id}/announcements`),
     enabled: !!house,
   })
+  const votes = useQuery({ queryKey: ['house', house?.id, 'votes'], queryFn: () => api<VoteListItem[]>(`/houses/${house!.id}/votes`), enabled: !!house })
+  // «Сейчас решается»: идущие и объявленные голосования; завершённые — во вкладке «Дом»
+  const deciding = votes.data?.filter((v) => v.status === 'ACTIVE' || v.status === 'NOTICE_SENT') ?? []
   const canVote = place.data?.units.some((u) => u.can_vote) ?? false
   const resident = place.data?.role === 'RESIDENT'
 
   return (
-    <Screen bottomInset={TAB_BAR_SPACE} refreshing={feed.isRefetching} onRefresh={() => { void feed.refetch(); void place.refetch() }}>
+    <Screen bottomInset={TAB_BAR_SPACE} refreshing={feed.isRefetching} onRefresh={() => { void feed.refetch(); void place.refetch(); void votes.refetch() }}>
       <Title sub={house?.address}>{house?.display_name ?? 'Дом'}</Title>
 
       {resident && place.data && !place.data.identity_verified && (
@@ -54,6 +59,13 @@ export default function Home() {
             ))}
           </View>
         </Card>
+      )}
+
+      {deciding.length > 0 && (
+        <>
+          <H2>Сейчас решается</H2>
+          <View style={{ gap: space.sm }}>{deciding.map((v) => <VoteRow key={v.id} v={v} />)}</View>
+        </>
       )}
 
       <H2>Объявления</H2>
