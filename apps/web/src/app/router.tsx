@@ -20,6 +20,9 @@ import { ChargesPage } from '../chairman/finance/ChargesPage'
 import { DebtorsPage } from '../chairman/finance/DebtorsPage'
 import { PaymentsPage } from '../chairman/finance/PaymentsPage'
 import { ReportDetail, ReportsPage } from '../chairman/finance/ReportsPage'
+import { VoteDetail } from '../chairman/votes/VoteDetail'
+import { VoteForm } from '../chairman/votes/VoteForm'
+import { VotesPage } from '../chairman/votes/VotesPage'
 import { DevEgov } from '../auth/DevEgov'
 import { AdminRoute, HomeRedirect, HouseRoute, NoAccess, Root } from './routes'
 
@@ -64,6 +67,10 @@ export const router = createBrowserRouter([
           { path: 'finance/debtors', element: <DebtorsPage /> },
           { path: 'finance/reports', element: <ReportsPage /> },
           { path: 'finance/reports/:reportId', element: <ReportDetail /> },
+          { path: 'votes', element: <VotesPage /> },
+          { path: 'votes/new', element: <VoteForm /> },
+          { path: 'votes/:voteId', element: <VoteDetail /> },
+          { path: 'votes/:voteId/edit', element: <VoteForm /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

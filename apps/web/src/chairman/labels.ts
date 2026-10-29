@@ -58,3 +58,26 @@ export function recentMonths(n = 12): string[] {
   const now = new Date(Date.now() + 5 * 3600_000)
   return Array.from({ length: n }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7))
 }
+
+export const VOTE_STATUS: Record<string, string> = {
+  DRAFT: 'Черновик',
+  NOTICE_SENT: 'Уведомление разослано',
+  ACTIVE: 'Идёт голосование',
+  CLOSED: 'Завершено',
+  CANCELLED: 'Отменено',
+}
+
+export const PROTOCOL_STATUS: Record<string, string> = {
+  AWAITING_SIGNATURES: 'Ждёт подписей',
+  SIGNED: 'Подписан',
+  PUBLISHED: 'Опубликован',
+}
+
+export const QUESTION_TYPE: Record<string, string> = {
+  YES_NO: 'За / против / воздержался',
+  SINGLE_CHOICE: 'Один вариант из списка',
+  MULTI_CHOICE: 'Несколько вариантов',
+}
+
+export const area = (m2: number) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(m2)} м²`
+export const pct = (p: number) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(p)}%`
