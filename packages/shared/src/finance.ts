@@ -253,3 +253,75 @@ export type ChargeRunView = {
   /** Помещения, которым тариф за м² начислить не смог: нет площади */
   skipped_units: { id: string; number: string }[]
 }
+
+/* ───────── оплаты и чеки (docs/10 §5) ───────── */
+
+export const PaymentStatus = ['PENDING_REVIEW', 'CONFIRMED', 'REJECTED', 'FLAGGED'] as const
+export type PaymentStatus = (typeof PaymentStatus)[number]
+export const PaymentMethod = ['KASPI_LINK', 'RECEIPT_UPLOAD', 'KASPI_API', 'CASH', 'BANK_TRANSFER'] as const
+export type PaymentMethod = (typeof PaymentMethod)[number]
+
+/** Что насторожило в оплате. Автоматического отказа нет ни по одному флагу */
+export const PaymentFlag = ['DUPLICATE_FILE', 'SIMILAR_IMAGE', 'DUPLICATE_REF', 'AMOUNT_MISMATCH', 'RECIPIENT_MISMATCH', 'NOT_RECOGNIZED'] as const
+export type PaymentFlag = (typeof PaymentFlag)[number]
+
+const externalRef = z.string().trim().min(4).max(64).regex(/^[\p{L}\p{N}\-_/]+$/u, 'Номер операции — буквы, цифры, - _ /')
+
+/** Реквизиты Kaspi: ссылка на оплату из Kaspi Pay и получатель, как он печатается в чеке */
+export const paymentSettingsBody = z.object({
+  pay_url: z.url({ protocol: /^https$/, hostname: /(^|\.)kaspi\.kz$/ }).max(300),
+  recipient_name: trimmed(2, 120),
+})
+export type PaymentSettingsBody = z.infer<typeof paymentSettingsBody>
+
+export const submitPaymentBody = z.object({
+  file_id: z.uuid(),
+  /** Пусто — возьмём из чека; распознать не удалось — попросим ввести */
+  amount: money.optional(),
+  external_ref: externalRef.optional(),
+  paid_at: z.iso.datetime({ offset: true }).optional(),
+})
+export type SubmitPaymentBody = z.infer<typeof submitPaymentBody>
+
+/** Наличные или перевод по выписке: председатель или бухгалтер вносит сразу подтверждённым */
+export const manualPaymentBody = z.object({
+  charge_id: z.uuid(),
+  amount: money,
+  method: z.enum(['CASH', 'BANK_TRANSFER']),
+  paid_on: isoDate,
+  external_ref: externalRef.optional(),
+})
+export type ManualPaymentBody = z.infer<typeof manualPaymentBody>
+
+export const confirmPaymentBody = z.object({
+  /** Сколько зачесть; по умолчанию — заявленная сумма, но не больше остатка */
+  amount: money.optional(),
+  /** Флаги видел и всё равно подтверждаю — явное решение человека */
+  acknowledge_flags: z.boolean().default(false),
+})
+export type ConfirmPaymentBody = z.input<typeof confirmPaymentBody>
+export const rejectPaymentBody = z.object({ reason: trimmed(5, 300) })
+export type RejectPaymentBody = z.infer<typeof rejectPaymentBody>
+
+export const paymentListQuery = z.object({ status: z.enum([...PaymentStatus, 'review', 'all']).default('review') })
+export type PaymentListQuery = z.input<typeof paymentListQuery>
+
+export const scanReceiptBody = z.object({ file_id: z.uuid() })
+export type ScanReceiptBody = z.infer<typeof scanReceiptBody>
+
+export type ReceiptFields = { amount: number | null; date: string | null; ref: string | null; recipient: string | null }
+
+export type PaymentLinkView = { mode: 'RECEIPT' | 'KASPI_API'; pay_url: string; recipient_name: string; amount: number; purpose: string }
+
+export type PaymentView = {
+  id: string; status: PaymentStatus; method: PaymentMethod; amount: number; confirmed_amount: number | null
+  paid_at: string | null; external_ref: string | null; created_at: string; confirmed_at: string | null; rejection_reason: string | null
+  flags: { code: PaymentFlag; message: string }[]
+  charge: { id: string; title: string; period: string; amount: number; paid_amount: number }
+  unit: { id: string; number: string }
+  receipt: { file_id: string; recognized: ReceiptFields | null } | null
+  /** Только для правления */
+  paid_by?: { id: string; name: string }
+}
+
+export type ReceiptScanView = { receipt_id: string; recognized: ReceiptFields | null; duplicate: boolean }

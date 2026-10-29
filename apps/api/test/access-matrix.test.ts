@@ -59,7 +59,7 @@ afterAll(async () => {
   await t.app.close()
 })
 
-const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => string, allowed: Role[]][] = [
+const endpoints: [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: () => string, allowed: Role[]][] = [
   ['get', () => `/houses/${houseId}`, ALL],
   ['get', () => `/houses/${houseId}/me`, ALL],
   ['get', () => `/houses/${houseId}/readiness`, BOARD],
@@ -112,6 +112,14 @@ const endpoints: [method: 'get' | 'post' | 'patch' | 'delete', path: () => strin
   ['post', () => `/houses/${houseId}/charges/generate`, CHAIR],
   ['post', () => `/houses/${houseId}/charge-collections`, CHAIR],
   ['get', () => `/houses/${houseId}/my-charges`, ALL],
+  ['get', () => `/houses/${houseId}/payment-settings`, BOARD],
+  ['put', () => `/houses/${houseId}/payment-settings`, CHAIR],
+  ['get', () => `/houses/${houseId}/my-payments`, ALL],
+  ['get', () => `/houses/${houseId}/payments`, BOARD],
+  ['post', () => `/houses/${houseId}/payments`, BOARD],
+  ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/confirm`, BOARD],
+  ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/reject`, BOARD],
+  ['post', () => `/houses/${houseId}/receipts/scan`, BOARD],
 ]
 
 describe('access matrix', () => {

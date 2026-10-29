@@ -411,20 +411,28 @@ API их не блокирует — иначе пришлось бы дубли
 | POST | `/houses/:id/charge-collections` | chairman | `house` | да | `write` | да |
 | PATCH | `/houses/:id/charges/:chargeId` | chairman | `house` | да | `write` | да |
 | POST | `/houses/:id/charges/:chargeId/cancel` | chairman | `house` | да | `write` | да |
-| GET | `/charges/:id/payment-link` | resident (свой) | `self` | нет | `read` | да |
-| POST | `/charges/:id/payment` | resident (свой) | `self` | нет | `upload` | да |
-| GET | `/houses/:id/payments` | chairman, accountant | `house` | нет | `read` | нет |
-| POST | `/payments/:id/confirm` | chairman, accountant | `house` | да | `write` | да |
-| POST | `/payments/:id/reject` | chairman, accountant | `house` | да | `write` | да |
+| GET | `/houses/:id/payment-settings` | chairman, accountant | `house` | нет | `read` | нет |
+| PUT | `/houses/:id/payment-settings` | chairman | `house` | да | `write` | да |
+| GET | `/houses/:id/charges/:chargeId/payment-link` | член дома (своё помещение) | `self` | нет | `read` | да |
+| POST | `/houses/:id/charges/:chargeId/payments` | член дома (своё помещение) | `self` | нет | `upload` | да |
+| GET | `/houses/:id/my-payments` | член дома | `self` | нет | `read` | нет |
+| GET | `/houses/:id/payments?status=review` | chairman, accountant | `house` | нет | `read` | нет |
+| GET | `/houses/:id/payments/:paymentId` | правление; плательщик — свою | `house` | нет | `read` | нет |
+| POST | `/houses/:id/payments` | chairman, accountant | `house` | да | `write` | да |
+| POST | `/houses/:id/payments/:paymentId/confirm` | chairman, accountant | `house` | да | `write` | да |
+| POST | `/houses/:id/payments/:paymentId/reject` | chairman, accountant | `house` | да | `write` | да |
+| POST | `/houses/:id/receipts/scan` | chairman, accountant | `house` | нет | `upload` | да |
 | GET | `/houses/:id/debtors` | chairman, accountant | `house` | нет | `read` | да |
 
 **`GET /houses/:id/debtors` доступен только председателю и бухгалтеру.** Жилец получает `403`. Обоснование — в [14-compliance-privacy.md](14-compliance-privacy.md#4-приватность-внутри-дома): публикация поимённого списка должников на весь дом раскрывает персональные данные и порождает конфликты между соседями. Просмотр списка пишется в аудит.
 
 **Тарифы** задаются с текущего месяца или позже и не правятся: новый тариф того же вида закрывает предыдущий (`effective_to`). Виды: `MAINTENANCE` и `CAPITAL_REPAIR` — за м² для квартир и нежилых помещений, `PARKING` — фиксированно для парковочных мест и кладовок (по умолчанию; `unit_types` можно задать). **Начисление** за месяц идёт 1 числа по расписанию и вручную (`generate`, текущий или прошлый месяц); повторный запуск добавляет только недостающее. Помещения без площади пропускаются и возвращаются списком в `skipped_units`. Срок оплаты — последний день месяца; после него неоплаченное становится `OVERDUE`. Сумму начисления можно исправить или отменить только до первой оплаты и с причиной. **Целевой сбор** (`charge-collections`) требует `decision_note` — основание из протокола собрания; файл протокола виден всем жильцам. `my-charges` показывает начисления только по помещениям с подтверждённой собственностью.
 
-`GET /charges/:id/payment-link` возвращает deeplink Kaspi для режима `RECEIPT`; в режиме `KASPI_API` — счёт, выставленный через merchant API.
+`payment-link` возвращает ссылку Kaspi Pay из реквизитов дома (`pay_url` на домене kaspi.kz, `recipient_name`), сумму к оплате и назначение; без реквизитов — `409 PAYMENT_SETTINGS_MISSING`. Смена реквизитов — step-up и аудит: подмена реквизитов — классический способ увода денег.
 
-`POST /charges/:id/payment` — загрузка чека. Ставит платёж в `PENDING_REVIEW` и запускает OCR.
+`POST .../payments` принимает чек (`file_id` с `purpose = PAYMENT_RECEIPT`, фото или PDF) и необязательные `amount`, `external_ref`, `paid_at`. Сервер распознаёт чек (в разработке — текстовый слой PDF), сверяет и ставит `PENDING_REVIEW` или `FLAGGED` с флагами: `DUPLICATE_FILE` (тот же файл, в том числе в другом доме), `SIMILAR_IMAGE` (перцептивный хеш), `DUPLICATE_REF` (номер операции уже в другой оплате), `AMOUNT_MISMATCH`, `RECIPIENT_MISMATCH`, `NOT_RECOGNIZED`. Автоматического отказа нет. Сумму не распознать и не ввести — `422` с полем `amount`. Чек видят только плательщик и правление.
+
+`confirm` (`{amount?, acknowledge_flags}`) атомарно закрывает начисление (не больше остатка), создаёт проведённое поступление в журнале по строке формы (6.1, 6.2, 6.3 — на сберегательный, 6.5/6.6, 6.7) без номера помещения и имени плательщика и уведомляет плательщика. Флаги требуют `acknowledge_flags: true`. Номер операции банка подтверждается один раз во всей системе — частичный уникальный индекс в базе. `POST /payments` — наличные или перевод по выписке, сразу подтверждённые. `receipts/scan` распознаёт чек расхода для предзаполнения формы и предупреждает о повторе.
 
 ---
 

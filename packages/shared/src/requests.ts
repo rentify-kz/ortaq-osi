@@ -7,7 +7,7 @@ const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max
 
 /* ───────── файлы ───────── */
 
-export const FilePurpose = ['REQUEST_PHOTO', 'TASK_PHOTO', 'FINANCE_DOCUMENT'] as const
+export const FilePurpose = ['REQUEST_PHOTO', 'TASK_PHOTO', 'FINANCE_DOCUMENT', 'PAYMENT_RECEIPT'] as const
 export type FilePurpose = (typeof FilePurpose)[number]
 
 /** Фото с телефона. HEIC клиент конвертирует в JPEG при выборе: сервер его не декодирует.
@@ -22,7 +22,7 @@ export const uploadUrlBody = z.object({
   mime_type: z.enum(UPLOAD_MIME),
   size_bytes: z.number().int().positive().max(MAX_UPLOAD_BYTES, 'Файл больше 15 МБ'),
   name: trimmed(1, 200),
-}).refine((b) => b.mime_type !== 'application/pdf' || b.purpose === 'FINANCE_DOCUMENT', { path: ['mime_type'], message: 'PDF принимается только для финансовых документов' })
+}).refine((b) => b.mime_type !== 'application/pdf' || b.purpose === 'FINANCE_DOCUMENT' || b.purpose === 'PAYMENT_RECEIPT', { path: ['mime_type'], message: 'PDF принимается только для финансовых документов и чеков' })
 export type UploadUrlBody = z.infer<typeof uploadUrlBody>
 
 export type UploadUrlResponse = { file_id: string; upload_url: string; method: 'PUT'; headers: Record<string, string>; expires_at: string }

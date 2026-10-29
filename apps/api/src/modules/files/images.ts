@@ -31,3 +31,29 @@ export async function reencodeImage(buf: Buffer): Promise<ProcessedImage> {
     .toBuffer({ resolveWithObject: true })
   return { body: data, width: info.width, height: info.height }
 }
+
+/**
+ * Перцептивный dHash, 64 бита: соседние пиксели уменьшенной серой копии «светлее/темнее».
+ * Пересохранение, сжатие и лёгкая обрезка меняют лишь несколько бит — так ловится тот же чек,
+ * присланный повторно другим файлом.
+ */
+export async function dHash(buf: Buffer): Promise<Buffer> {
+  const { data } = await sharp(buf, { limitInputPixels: MAX_PIXELS }).greyscale().resize(9, 8, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true })
+  const out = Buffer.alloc(8)
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      if (data[y * 9 + x]! > data[y * 9 + x + 1]!) out[y]! |= 1 << x
+    }
+  }
+  return out
+}
+
+/** Сколько бит различается: до ~6 из 64 — практически то же изображение */
+export function hamming(a: Uint8Array, b: Uint8Array): number {
+  let d = 0
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    let v = a[i]! ^ b[i]!
+    while (v) { d += v & 1; v >>= 1 }
+  }
+  return d
+}

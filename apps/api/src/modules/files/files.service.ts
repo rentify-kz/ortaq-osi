@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service'
 import { isBoardRole, visibleRequestsWhere } from '../requests/visibility'
 import { reencodeImage, sniffImage } from './images'
 
-export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION' | 'CHARGE_COLLECTION'
+export type FileParent = 'REQUEST' | 'REQUEST_EVENT' | 'TASK_COMPLETION' | 'TRANSACTION' | 'CHARGE_COLLECTION' | 'RECEIPT'
 
 const rejected = (message: string) => new AppError(422, ErrorCode.FILE_REJECTED, message)
 
@@ -59,7 +59,7 @@ export class FilesService {
 
     const original = await this.storage.read(file.storageKey, MAX_UPLOAD_BYTES)
     if (!original) throw unprocessable(ErrorCode.FILE_NOT_UPLOADED, 'Файл не загружен или больше 15 МБ')
-    if (file.purpose === 'FINANCE_DOCUMENT' && original.toString('latin1', 0, 5) === '%PDF-') return this.finalizePdf(file, original)
+    if ((file.purpose === 'FINANCE_DOCUMENT' || file.purpose === 'PAYMENT_RECEIPT') && original.toString('latin1', 0, 5) === '%PDF-') return this.finalizePdf(file, original)
     if (!sniffImage(original)) return this.reject(file, 'Это не фотография: поддерживаются JPEG, PNG и WebP')
 
     let image: Awaited<ReturnType<typeof reencodeImage>>
@@ -136,6 +136,9 @@ export class FilesService {
         return !!doc && doc.transaction.confirmedAt !== null
       }
       // Протокол собрания — основание целевого сбора: его вправе видеть каждый, с кого собирают
+      // Чек жильца: в нём ФИО и карта плательщика — только он сам и правление, жильцам не публикуется
+      case 'RECEIPT':
+        return isBoardRole(role) || file.uploadedBy === userId
       case 'CHARGE_COLLECTION':
         return (await tx.chargeCollection.count({ where: { id: file.parentId } })) > 0
       default:

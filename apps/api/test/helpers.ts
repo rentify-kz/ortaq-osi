@@ -45,7 +45,7 @@ export async function resetDb() {
   await owner.$executeRawUnsafe(
     'TRUNCATE audit_log, sessions, auth_tokens, otp_codes, consents, signatures, verifications, owner_registry_entries, registry_imports, ' +
       'announcement_reads, announcement_targets, announcements, staff_members, contractors, device_tokens, notifications, notification_preferences, ' +
-      'charges, charge_collections, charge_runs, tariffs, transaction_documents, transactions, finance_accounts, ai_jobs, task_completions, tasks, recurring_task_templates, request_followers, request_events, request_stages, requests, files, ' +
+      'payments, receipts, charges, charge_collections, charge_runs, tariffs, transaction_documents, transactions, finance_accounts, ai_jobs, task_completions, tasks, recurring_task_templates, request_followers, request_events, request_stages, requests, files, ' +
       'join_requests, invites, unit_ownerships, house_memberships, units, houses, organizations, users CASCADE',
   )
 }

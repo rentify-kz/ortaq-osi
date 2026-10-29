@@ -152,6 +152,8 @@ model House {
   charges       Charge[]
   chargeRuns    ChargeRun[]
   collections   ChargeCollection[]
+  receipts      Receipt[]
+  payments      Payment[]
 
   /// Счётчик номеров операций: «операция №12» в журнале и отчёте
   transactionSeq Int @default(0) @map("transaction_seq")
@@ -676,6 +678,7 @@ enum FilePurpose {
   REQUEST_PHOTO
   TASK_PHOTO
   FINANCE_DOCUMENT
+  PAYMENT_RECEIPT
 }
 
 enum FileStatus {
@@ -1243,6 +1246,7 @@ model Charge {
   cancelledAt      DateTime?         @map("cancelled_at") @db.Timestamptz
   cancelledBy      String?           @map("cancelled_by") @db.Uuid
   cancelReason     String?           @map("cancel_reason")
+  payments         Payment[]
 
   @@unique([unitId, period, type, collectionKey])
   @@index([houseId, period])
@@ -1266,4 +1270,90 @@ model ChargeRun {
 
   @@unique([houseId, period])
   @@map("charge_runs")
+}
+
+// ───────── Фаза 3: оплаты и чеки (docs/10 §5) ─────────
+
+enum ReceiptPurpose {
+  EXPENSE
+  RESIDENT_PAYMENT
+}
+
+enum OcrStatus {
+  DONE
+  FAILED
+  MANUAL
+}
+
+enum PaymentMethod {
+  KASPI_LINK
+  RECEIPT_UPLOAD
+  KASPI_API
+  CASH
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  REJECTED
+  FLAGGED
+}
+
+/// Чек как доказательство: распознанные поля и два отпечатка для защиты от повторной подачи
+model Receipt {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  houseId        String         @map("house_id") @db.Uuid
+  house          House          @relation(fields: [houseId], references: [id])
+  fileId         String         @unique @map("file_id") @db.Uuid
+  uploadedBy     String         @map("uploaded_by") @db.Uuid
+  purpose        ReceiptPurpose
+  ocrStatus      OcrStatus      @map("ocr_status")
+  ocrText        String?        @map("ocr_text")
+  /// {amount, date, ref, recipient}
+  ocrParsed      Json?          @map("ocr_parsed")
+  ocrConfidence  Decimal?       @map("ocr_confidence") @db.Decimal(3, 2)
+  /// SHA-256 файла: тот же файл ещё раз
+  contentHash    Bytes          @map("content_hash")
+  /// dHash 64 бита: тот же чек, пересохранённый или переснятый
+  perceptualHash Bytes?         @map("perceptual_hash")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  payments       Payment[]
+
+  @@index([houseId, contentHash])
+  @@map("receipts")
+}
+
+model Payment {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  houseId         String        @map("house_id") @db.Uuid
+  house           House         @relation(fields: [houseId], references: [id])
+  chargeId        String        @map("charge_id") @db.Uuid
+  charge          Charge        @relation(fields: [chargeId], references: [id])
+  unitId          String        @map("unit_id") @db.Uuid
+  paidBy          String        @map("paid_by") @db.Uuid
+  /// Сумма, которую заявил плательщик или распознал чек
+  amount          Decimal       @db.Decimal(12, 2)
+  paidAt          DateTime?     @map("paid_at") @db.Timestamptz
+  method          PaymentMethod
+  receiptId       String?       @map("receipt_id") @db.Uuid
+  receipt         Receipt?      @relation(fields: [receiptId], references: [id])
+  /// Номер операции из чека или от банка. Подтверждённым он может быть только один раз — частичный уникальный индекс
+  externalRef     String?       @map("external_ref")
+  status          PaymentStatus @default(PENDING_REVIEW)
+  /// [{code, message}] — что насторожило. Автоматического отказа нет: решает человек
+  flags           Json          @default("[]")
+  confirmedBy     String?       @map("confirmed_by") @db.Uuid
+  confirmedAt     DateTime?     @map("confirmed_at") @db.Timestamptz
+  /// Сколько зачтено в начисление — может отличаться от заявленного
+  confirmedAmount Decimal?      @map("confirmed_amount") @db.Decimal(12, 2)
+  rejectionReason String?       @map("rejection_reason")
+  /// Поступление в журнале, созданное подтверждением
+  transactionId   String?       @unique @map("transaction_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([houseId, status])
+  @@index([chargeId])
+  @@index([externalRef])
+  @@map("payments")
 }
