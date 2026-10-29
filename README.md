@@ -1,85 +1,150 @@
-# Платформа ОСИ
+# Ortaq
 
-Платформа для объединений собственников имущества (ОСИ) и жильцов жилых комплексов в Казахстане.
+A management platform for condominium owners' associations (ОСИ) in Kazakhstan: a web workspace for the chairman and accountant, and a mobile app for residents and staff.
 
-**Для жильцов:** прозрачность бюджета дома, удобное голосование, быстрое решение вопросов по дому, понимание куда уходят деньги.
+- **Residents** see where the building's money goes, pay through Kaspi, submit requests with photos, and vote on owners' meetings with an ЭЦП signature.
+- **Chairmen** get request triage, tasks with photo reports, a ledger built on the official chart of accounts, a monthly report in the government form, and legally valid voting with an auto-generated protocol.
 
-**Для ОСИ:** автоматизация рутины, быстрая обработка заявок, контроль бюджета, юридическое упрощение и автоматическая отчётность.
+Product and design documentation is in [`docs/`](docs/) and [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) (in Russian).
 
----
+## Status
 
-## Статус
+Phases 0–4 of the [roadmap](docs/15-roadmap.md) are implemented: platform admin, onboarding, requests and tasks, finances and reporting, voting. Phase 5 (AI layer) is not started. External providers — SIGEX/eGov signing, SMS, push, OCR, Kaspi — run as development stand-ins with the same interfaces as the real integrations.
 
-Готовы **фаза 0** и **фаза 1** из [роадмапа](docs/15-roadmap.md). Фаза 0: админ-панель, подключение домов, вход председателя с обязательной 2FA, изоляция домов в трёх слоях (скоуп из пути, автоподстановка дома в запросы, RLS в PostgreSQL), журнал аудита с хеш-цепочкой, ротация refresh-токенов, step-up на опасных действиях. Фаза 1: вход жильцов по SMS-коду, вступление по ссылке и по заявке, подтверждение личности через ЭЦП со сверкой с реестром собственников, загрузка реестра и площадей, роли и бухгалтер, объявления со статистикой прочтений, персонал и подрядчики, уведомления с тихими часами. SIGEX, SMS и push пока работают через заглушки с тем же интерфейсом.
+## Repository layout
 
-| Папка | Что внутри |
+| Folder | Contents |
 |---|---|
-| `apps/api` | NestJS + Prisma, интеграционные тесты на реальной БД (`test/`) |
-| `apps/web` | Кабинет: админ-панель и председатель |
-| `apps/mobile` | Приложение жильца на Expo (iOS, Android; веб-сборка — для разработки) |
-| `packages/shared` | zod-схемы и перечисления, общие для api, web и mobile |
-| `apps/prototype` | Кликабельный прототип всех экранов, отдельный npm-проект |
-| `design/` | Доска экранов и UX-документация |
+| `apps/api` | NestJS + Prisma API, PostgreSQL with row-level security; integration tests in `test/` |
+| `apps/web` | Web workspace: platform admin, chairman, accountant (Vite + React) |
+| `apps/mobile` | Resident and staff app (Expo / React Native; the web build is for development) |
+| `packages/shared` | zod schemas, enums and types shared by api, web and mobile |
+| `apps/prototype` | Clickable prototype of all screens, a separate npm project |
+| `infra/` | Local Postgres roles and S3 (SeaweedFS) config |
+| `docs/` | Specification: data model, API contract, flows, security, roadmap |
 
-### Запуск локально
+## Requirements
 
-Нужны Node 22, Docker и corepack (pnpm подтянется сам).
+- Node.js 22 or newer
+- Docker with Docker Compose
+- corepack (ships with Node; it fetches the pinned pnpm version)
+
+Local services use non-standard ports so they don't clash with other projects:
+
+| Service | Port |
+|---|---|
+| PostgreSQL 16 | 5442 |
+| Mailpit (dev mail and SMS inbox) | 8035 (web UI), 1035 (SMTP) |
+| SeaweedFS (S3-compatible storage) | 8343 |
+| API | 3000 |
+| Web workspace | 5174 |
+| Mobile app (web build) | 8081 |
+
+## Installation
 
 ```bash
-corepack pnpm install
+# 1. Dependencies
+COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm install
+
+# 2. Postgres, Mailpit and S3 storage
 docker compose up -d --wait
-cp apps/api/.env.example apps/api/.env   # заполнить секреты, см. комментарии в файле
+
+# 3. Shared package (rebuild after every change to packages/shared)
 corepack pnpm --filter @ortaq/shared build
+```
+
+The Postgres container creates two roles on first start: `ortaq` owns the schema and runs migrations; `ortaq_app` is the application role without `BYPASSRLS`, so row-level security applies to every query. It also creates the `ortaq_test` database for tests.
+
+## Configuration
+
+```bash
+cp apps/api/.env.example apps/api/.env
+```
+
+Then fill in the secrets in `apps/api/.env`:
+
+| Variable | What to put |
+|---|---|
+| `JWT_SECRET` | `openssl rand -base64 32` |
+| `ENCRYPTION_KEY` | `openssl rand -base64 32` — exactly 32 bytes; encrypts TOTP secrets and ИИН |
+| `HMAC_KEY` | `openssl rand -base64 32` — hashes ИИН and tokens |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | The first platform admin, created by the seed (password at least 12 characters) |
+| `PASSWORD_BREACH_CHECK` | `hibp` checks passwords against known breaches; `off` for offline work |
+| `SIGNATURE_PROVIDER` | `dev` — the eGov signing stand-in. Only for development |
+
+Database, mail and storage defaults already match `docker-compose.yml`.
+
+For tests, create `apps/api/.env.test` as a copy of `.env` with `ortaq_test` instead of `ortaq` at the end of both database URLs and `NODE_ENV=test`.
+
+The mobile app reads `EXPO_PUBLIC_API_URL` (default `http://localhost:3000/v1`). On a physical phone, set it to your computer's LAN address, for example `http://192.168.1.20:3000/v1`.
+
+## Database
+
+```bash
+# Apply migrations (schema, RLS policies, triggers, reference data)
 corepack pnpm --filter @ortaq/api db:deploy
+
+# First platform admin
+corepack pnpm --filter @ortaq/api db:seed
+
+# Optional: demo house «ЖК Асыл Арман, блок 3» with chairman chairman@ortaq.local
 corepack pnpm --filter @ortaq/api db:seed -- --demo
 ```
 
-Затем в двух терминалах `corepack pnpm --filter @ortaq/api dev` (порт 3000) и `corepack pnpm --filter @ortaq/web dev` (http://localhost:5174). Письма председателям и SMS с кодами (заглушка шлёт их письмом на `sms+<номер>@ortaq.local`) видны в Mailpit: http://localhost:8035.
+The demo chairman has the same password as the admin. Two-factor authentication is set up on the first sign-in with any authenticator app.
 
-Приложение жильца: `corepack pnpm --filter @ortaq/mobile web` (http://localhost:8081) или Expo Go на телефоне через `corepack pnpm --filter @ortaq/mobile start`. Адрес API задаёт `EXPO_PUBLIC_API_URL` (по умолчанию `http://localhost:3000/v1`; для телефона в той же сети — IP компьютера). Подпись в «eGov mobile» в разработке открывает страницу-заглушку кабинета `/dev/egov`.
+## Running
 
-Тесты API идут на отдельной базе `ortaq_test` (нужен `apps/api/.env.test`, как `.env`, но с `ortaq_test` в адресах): `corepack pnpm --filter @ortaq/api test`.
+Each in its own terminal:
 
-## Документация
+```bash
+corepack pnpm --filter @ortaq/api dev       # API on http://localhost:3000
+corepack pnpm --filter @ortaq/web dev       # web workspace on http://localhost:5174
+corepack pnpm --filter @ortaq/mobile web    # resident app in the browser on http://localhost:8081
+```
 
-Читать по порядку. Файлы 00–03 дают общую картину, 04–08 описывают поведение системы, 09–11 — сложные предметные области, 12–15 — нефункциональные требования и план.
+For the mobile app on a phone, run `corepack pnpm --filter @ortaq/mobile start` and open it in Expo Go.
 
-| Документ | О чём |
+### Signing in during development
+
+- **Admin and chairman** sign in on the web with email, password and an authenticator code. Emails to chairmen (invitations, password setup) arrive in Mailpit at http://localhost:8035.
+- **Residents** sign in on mobile by phone number. The SMS stand-in delivers the 6-digit code to Mailpit as an email titled «SMS для +7…».
+- **ЭЦП signing** (identity, ballots, reports, protocols) opens the dev eGov page `/dev/egov` instead of eGov mobile. Enter any ИИН with a valid checksum, such as `850515300125`, `900312400239` or `781122500347`, and any full name. One ИИН belongs to one account; keep using the same ИИН for the same person.
+
+## Tests and checks
+
+```bash
+corepack pnpm --filter @ortaq/api test    # unit and integration tests against the ortaq_test database
+corepack pnpm typecheck                   # all packages
+```
+
+API tests run on a real PostgreSQL with RLS, so `docker compose up` must be running.
+
+## Tech stack
+
+| Layer | Technology |
 |---|---|
-| [00-overview.md](docs/00-overview.md) | Видение продукта, роли, глоссарий, границы MVP, таблица трассируемости требований |
-| [01-architecture.md](docs/01-architecture.md) | Стек, структура монорепозитория, модули, инфраструктура Yandex Cloud |
-| [02-data-model.md](docs/02-data-model.md) | Полная модель данных, ERD, описания таблиц |
-| [03-api-contract.md](docs/03-api-contract.md) | REST-контракт: эндпоинты, права, скоуп, аудит |
-| [04-flows-admin-onboarding.md](docs/04-flows-admin-onboarding.md) | Админ-панель и подключение домов |
-| [05-flows-resident.md](docs/05-flows-resident.md) | User flows жильца |
-| [06-flows-chairman.md](docs/06-flows-chairman.md) | User flows председателя и бухгалтера |
-| [07-flows-worker.md](docs/07-flows-worker.md) | User flows работника |
-| [08-flows-system.md](docs/08-flows-system.md) | Автоматизации, фоновые задачи, машины состояний |
-| [09-voting-legal.md](docs/09-voting-legal.md) | Голосования, правовые требования, ЭЦП, протоколы |
-| [10-finance-payments.md](docs/10-finance-payments.md) | План счетов, начисления, оплаты, чеки, отчётность |
-| [11-ai-layer.md](docs/11-ai-layer.md) | ИИ-функции, обезличивание, промпты, ограничения |
-| [12-design-system.md](docs/12-design-system.md) | Дизайн-токены, компоненты, экраны |
-| [13-security.md](docs/13-security.md) | Модель угроз и решения по безопасности |
-| [14-compliance-privacy.md](docs/14-compliance-privacy.md) | Персональные данные, закон РК, ретенция |
-| [15-roadmap.md](docs/15-roadmap.md) | Фазы поставки |
+| API | NestJS 11, TypeScript, Prisma 6, PostgreSQL 16 with row-level security |
+| Web | React 19, Vite, Tailwind CSS 4, TanStack Query, React Router |
+| Mobile | Expo SDK 58, React Native, Expo Router |
+| Shared | zod 4 schemas used on both client and server |
+| Monorepo | pnpm workspaces, Turborepo |
+| Tests | Vitest, Supertest |
+| Local services | Docker Compose: PostgreSQL, Mailpit, SeaweedFS |
 
-## Стек
+## Documentation
 
-| Слой | Технология |
+| Document | About |
 |---|---|
-| Мобильное приложение | React Native + Expo (Expo Router) |
-| Веб-приложение | Vite + React + TypeScript + Tailwind |
-| Бэкенд | NestJS + TypeScript (модульный монолит) |
-| База данных | PostgreSQL (Yandex Managed Service, регион `kz1`) |
-| Файлы | Yandex Object Storage |
-| Очереди и кэш | Redis + BullMQ |
-| ИИ | Gemini API (через слой обезличивания) |
-| ЭЦП | SIGEX (подписание через eGov mobile) |
-| Оплаты | Kaspi (ссылка + чек; merchant API позже) |
-
-## Ключевые ограничения
-
-1. **Данные граждан РК хранятся в Казахстане** — закон №94-V. Первичное хранение только в регионе `kz1`.
-2. **Голоса считаются пропорционально площади помещения**, а не по числу людей — ст. 42 Закона «О жилищных отношениях». Голосование недоступно, пока не заполнены площади.
-3. **Форма отчётности задана государством** — Приказ №362 от 12.09.2025. План счетов выводится из неё, а не изобретается.
-4. **Персональные данные не передаются в ИИ** — обязательный слой обезличивания перед любым вызовом модели.
+| [00-overview](docs/00-overview.md) | Vision, roles, glossary, MVP scope |
+| [01-architecture](docs/01-architecture.md) | Stack, modules, infrastructure |
+| [02-data-model](docs/02-data-model.md) | Data model |
+| [03-api-contract](docs/03-api-contract.md) | REST endpoints, roles, step-up, audit |
+| [04–08](docs/) | Admin, resident, chairman, worker and system flows |
+| [09-voting-legal](docs/09-voting-legal.md) | Voting, quorum by area, ЭЦП, protocols |
+| [10-finance-payments](docs/10-finance-payments.md) | Chart of accounts, charges, payments, reports |
+| [11-ai-layer](docs/11-ai-layer.md) | Planned AI features |
+| [12-design-system](docs/12-design-system.md) | Design tokens and components |
+| [13-security](docs/13-security.md) | Threat model and controls |
+| [14-compliance-privacy](docs/14-compliance-privacy.md) | Personal data and Kazakhstan law |
+| [15-roadmap](docs/15-roadmap.md) | Delivery phases |
