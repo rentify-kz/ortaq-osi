@@ -75,6 +75,9 @@ import { ReceiptsService } from './modules/finance/receipts.service'
 import { DebtorsService } from './modules/finance/debtors.service'
 import { OverviewController } from './modules/finance/overview.controller'
 import { OverviewService } from './modules/finance/overview.service'
+import { ReportsController } from './modules/finance/reports.controller'
+import { ReportsScheduler } from './modules/finance/reports.scheduler'
+import { ReportsService } from './modules/finance/reports.service'
 import { OCR_PROVIDER, TextLayerOcrProvider } from './integrations/ocr/ocr.provider'
 
 /** Провайдер подписи по конфигурации. Адаптер SIGEX появится вместе с договором и тестовым контуром */
@@ -100,7 +103,7 @@ function storageProviderFactory(): StorageProvider {
     AuthController, AdminController, HousesController, MembershipsController, VerificationController, OwnershipsController,
     UnitsController, RegistryController, MembersController, StaffController,
     AnnouncementsController, NotificationsController, FilesController, RequestsController, TasksController, RecurringController,
-    BudgetCategoriesController, FinanceController, ChargesController, PaymentsController, OverviewController,
+    BudgetCategoriesController, FinanceController, ChargesController, PaymentsController, OverviewController, ReportsController,
     ...(devStandIns ? [DevEgovController] : []),
   ],
   providers: [
@@ -110,7 +113,7 @@ function storageProviderFactory(): StorageProvider {
     RegistryMatcher, RegistryService, UnitsService, MembersService, StaffService,
     PushService, NotificationsService, NotificationsDispatcher, AnnouncementsService,
     FilesService, DevStorageBootstrap, AiService, RequestsService, RequestActionsService, StagesService, TasksService, RecurringService, RecurringScheduler,
-    CategoriesService, AccountsService, TransactionsService, ChargesService, ChargesScheduler, ReceiptsService, PaymentsService, OverviewService, DebtorsService,
+    CategoriesService, AccountsService, TransactionsService, ChargesService, ChargesScheduler, ReceiptsService, PaymentsService, OverviewService, DebtorsService, ReportsService, ReportsScheduler,
     // Модель подключается здесь; пока договора с Gemini нет — правила с тем же контрактом
     { provide: AI_PROVIDER, useClass: RulesAiProvider },
     { provide: STORAGE_PROVIDER, useFactory: storageProviderFactory },

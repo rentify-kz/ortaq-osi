@@ -154,6 +154,7 @@ model House {
   collections   ChargeCollection[]
   receipts      Receipt[]
   payments      Payment[]
+  reports       Report[]
 
   /// Счётчик номеров операций: «операция №12» в журнале и отчёте
   transactionSeq Int @default(0) @map("transaction_seq")
@@ -1356,4 +1357,69 @@ model Payment {
   @@index([chargeId])
   @@index([externalRef])
   @@map("payments")
+}
+
+// ───────── Фаза 3: отчётность (docs/10 §7) ─────────
+
+enum ReportType {
+  MONTHLY
+  ANNUAL
+}
+
+enum ReportStatus {
+  DRAFT
+  SIGNED
+  PUBLISHED
+}
+
+/// Форма отчёта как данные: смена приказа — новая строка и effective_from, а не релиз
+model ReportTemplate {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  formCode      String     @map("form_code")
+  version       String
+  legalSource   String     @map("legal_source")
+  effectiveFrom DateTime   @map("effective_from") @db.Date
+  effectiveTo   DateTime?  @map("effective_to") @db.Date
+  /// Строки формы: код и источник суммы (остаток, долг, сумма операций по кодам, сумма строк)
+  schema        Json
+  reports       Report[]
+
+  @@unique([formCode, version])
+  @@map("report_templates")
+}
+
+model Report {
+  id                    String         @id @default(uuid(7)) @db.Uuid
+  houseId               String         @map("house_id") @db.Uuid
+  house                 House          @relation(fields: [houseId], references: [id])
+  templateId            String         @map("template_id") @db.Uuid
+  template              ReportTemplate @relation(fields: [templateId], references: [id])
+  type                  ReportType
+  period                String         @db.VarChar(7)
+  /// Заполненная форма: шапка и строки с суммами
+  data                  Json
+  /// Чего не хватает до сдачи: операции без документов, непроведённые черновики
+  issues                Json           @default("[]")
+  /// Выполненные работы с фото из подтверждённых задач
+  workSummary           Json           @default("[]") @map("work_summary")
+  /// SHA-256 канонического содержимого: именно его подписывают ЭЦП
+  dataHash              Bytes          @map("data_hash")
+  status                ReportStatus   @default(DRAFT)
+  generatedAt           DateTime       @map("generated_at") @db.Timestamptz
+  /// null — сформирован по расписанию
+  generatedBy           String?        @map("generated_by") @db.Uuid
+  chairmanSignatureId   String?        @map("chairman_signature_id") @db.Uuid
+  accountantSignatureId String?        @map("accountant_signature_id") @db.Uuid
+  /// Начатые процедуры подписания: {CHAIRMAN: {external_id, user_id}}
+  pendingSigning        Json           @default("{}") @map("pending_signing")
+  signedAt              DateTime?      @map("signed_at") @db.Timestamptz
+  publishedAt           DateTime?      @map("published_at") @db.Timestamptz
+  publishedBy           String?        @map("published_by") @db.Uuid
+  /// Срок сдачи: 20 число следующего месяца
+  dueDate               DateTime       @map("due_date") @db.Date
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([houseId, type, period])
+  @@map("reports")
 }

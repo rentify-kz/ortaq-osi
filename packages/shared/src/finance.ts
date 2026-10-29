@@ -361,3 +361,43 @@ export type DebtorView = {
 
 export const remindDebtorsBody = z.object({ unit_ids: z.array(z.uuid()).min(1).max(500) })
 export type RemindDebtorsBody = z.infer<typeof remindDebtorsBody>
+
+/* ───────── отчётность (docs/10 §7) ───────── */
+
+export const ReportStatus = ['DRAFT', 'SIGNED', 'PUBLISHED'] as const
+export type ReportStatus = (typeof ReportStatus)[number]
+
+export const generateReportBody = z.object({ period })
+export type GenerateReportBody = z.infer<typeof generateReportBody>
+
+export type ReportRow = {
+  code: string
+  label: string
+  /** Глубина вложенности кода: 6 → 0, 6.1 → 1, 7.1.1 → 2 */
+  level: number
+  amount: number
+  /** Для 7.2.1: исполнители и виды услуг — форма печатает их наименования */
+  lines?: { payee: string; service: string; amount: number }[]
+}
+
+export type ReportIssue = {
+  kind: 'MISSING_DOCUMENTS' | 'UNPOSTED_DRAFTS' | 'PAYMENTS_TO_REVIEW' | 'UNITS_WITHOUT_AREA'
+  message: string
+  transaction?: { id: string; number: number; amount: number; category: string; missing: DocumentKind[] }
+}
+
+export type ReportSignatureView = { name: string; signed_at: string } | null
+
+export type ReportView = {
+  id: string; period: string; status: ReportStatus; due_date: string; generated_at: string; published_at: string | null
+  legal_source: string
+  header: { address: string; management_form: string; organization: string; bin: string; legal_address: string; period_from: string; period_to: string; banks: { CURRENT: string | null; SAVINGS: string | null } }
+  rows: ReportRow[]
+  issues: ReportIssue[]
+  work: { task_id: string; title: string; completed_at: string; photo_file_ids: string[] }[]
+  signatures: { chairman: ReportSignatureView; accountant: ReportSignatureView; accountant_required: boolean }
+}
+
+export type ReportListItem = { id: string; period: string; status: ReportStatus; due_date: string; generated_at: string; published_at: string | null; issues: number }
+
+export type SigningStartView = { external_id: string; qr_url: string; deeplink: string; expires_at: string }

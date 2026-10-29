@@ -123,6 +123,10 @@ const endpoints: [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: () 
   ['get', () => `/houses/${houseId}/finance/overview`, ALL],
   ['get', () => `/houses/${houseId}/debtors`, BOARD],
   ['post', () => `/houses/${houseId}/debtors/remind`, BOARD],
+  ['get', () => `/houses/${houseId}/reports`, ALL],
+  ['post', () => `/houses/${houseId}/reports/generate`, BOARD],
+  ['post', () => `/houses/${houseId}/reports/${crypto.randomUUID()}/sign`, BOARD],
+  ['post', () => `/houses/${houseId}/reports/${crypto.randomUUID()}/publish`, CHAIR],
 ]
 
 describe('access matrix', () => {

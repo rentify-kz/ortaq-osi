@@ -15,6 +15,7 @@ import { FilesService } from '../files/files.service'
 import { isBoardRole } from '../requests/visibility'
 import { CategoriesService } from './categories.service'
 import { almatyToday, dateStr, dec, num, periodOf, toDate } from './finance.util'
+import { assertPeriodOpen } from './period-lock'
 
 const include = {
   category: { select: { code: true, shortName: true, nameRu: true, section: true, requiredDocuments: true } },
@@ -143,6 +144,7 @@ export class TransactionsService {
     const b = updateTransactionBody.parse(input)
     await this.db.run(async (tx) => {
       const t = await this.draft(tx, id)
+      await assertPeriodOpen(tx, t.period)
       const v = await this.validate(tx, {
         accountId: b.account_id ?? t.accountId,
         categoryCode: b.category_code ?? t.categoryCode,
@@ -194,6 +196,7 @@ export class TransactionsService {
     await this.db.run(async (tx) => {
       const t = await this.locked(tx, id)
       if (t.status === 'VOIDED') throw state('Операция уже аннулирована')
+      await assertPeriodOpen(tx, t.period)
       if (role !== 'CHAIRMAN' && !(t.status === 'DRAFT' && t.createdBy === userId)) throw forbidden('Проведённую операцию аннулирует председатель')
       await tx.transaction.update({ where: { id }, data: { status: 'VOIDED', voidedBy: userId, voidedAt: new Date(), voidReason: b.reason } })
       await this.audit.append(tx, { action: 'finance.transaction_void', entityType: 'Transaction', entityId: id, before: { status: t.status }, after: { number: t.number, amount: num(t.amount), reason: b.reason } })
@@ -275,6 +278,7 @@ export class TransactionsService {
     if (f.occurredOn < dateStr(account.openedOn)) throw field('occurred_on', `Счёт ведётся с ${dateStr(account.openedOn)}: более ранние операции входят в начальный остаток`)
     const period = f.period ?? periodOf(f.occurredOn)
     if (period > periodOf(today)) throw field('period', 'Отчётный месяц ещё не наступил')
+    await assertPeriodOpen(tx, period)
 
     if (f.contractorId) {
       const c = await tx.contractor.findFirst({ where: { id: f.contractorId }, select: { id: true } })

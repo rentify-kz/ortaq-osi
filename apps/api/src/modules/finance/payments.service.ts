@@ -14,6 +14,7 @@ import { FilesService } from '../files/files.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { isBoardRole } from '../requests/visibility'
 import { almatyToday, dateStr, dec, num, periodOf, toDate } from './finance.util'
+import { isPeriodClosed } from './period-lock'
 import { sameRecipient } from './receipt-parser'
 import { ReceiptsService, type Flag } from './receipts.service'
 
@@ -202,7 +203,9 @@ export class PaymentsService {
     // Целевой взнос за парковку и кладовку — отдельная строка формы (6.6)
     const code = charge.type === 'TARGETED' && (charge.unit.type === 'PARKING' || charge.unit.type === 'STORAGE') ? '6.6' : CHARGE_CATEGORY[charge.type]
     const paidDay = p.paidAt ? dateStr(new Date(p.paidAt.getTime() + 5 * 3600_000)) : almatyToday()
-    const occurred = paidDay < dateStr(account.openedOn) || paidDay > almatyToday() ? almatyToday() : paidDay
+    let occurred = paidDay < dateStr(account.openedOn) || paidDay > almatyToday() ? almatyToday() : paidDay
+    // Месяц уже подписан — деньги ложатся в текущий: подписанный отчёт не меняется задним числом
+    if (await isPeriodClosed(tx, periodOf(occurred))) occurred = almatyToday()
 
     const seq = await tx.$queryRaw<{ transaction_seq: number }[]>`
       UPDATE houses SET transaction_seq = transaction_seq + 1 WHERE id = ${charge.houseId}::uuid RETURNING transaction_seq`
