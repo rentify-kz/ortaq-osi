@@ -117,7 +117,7 @@ const endpoints: [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: () 
   ['get', () => `/houses/${houseId}/my-payments`, ALL],
   ['get', () => `/houses/${houseId}/payments`, BOARD],
   ['post', () => `/houses/${houseId}/payments`, BOARD],
-  ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/confirm`, BOARD],
+  ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/confirm`, CHAIR],
   ['post', () => `/houses/${houseId}/payments/${crypto.randomUUID()}/reject`, BOARD],
   ['post', () => `/houses/${houseId}/receipts/scan`, BOARD],
   ['get', () => `/houses/${houseId}/finance/overview`, ALL],

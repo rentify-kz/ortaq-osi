@@ -14,7 +14,7 @@ import { FilesService } from '../files/files.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { isBoardRole } from '../requests/visibility'
 import { almatyToday, dateStr, dec, num, periodOf, toDate } from './finance.util'
-import { isPeriodClosed } from './period-lock'
+import { assertPeriodOpen, isPeriodClosed } from './period-lock'
 import { sameRecipient } from './receipt-parser'
 import { ReceiptsService, type Flag } from './receipts.service'
 
@@ -180,7 +180,9 @@ export class PaymentsService {
           paidAt: toDate(b.paid_on), method: b.method, externalRef: b.external_ref ?? null, status: 'PENDING_REVIEW',
         },
       })
-      await this.post(tx, p, b.amount)
+      // Деньги проводит председатель: запись бухгалтера ждёт его подтверждения, как и черновик операции
+      if (ctx().role === 'CHAIRMAN') await this.post(tx, p, b.amount)
+      await this.audit.append(tx, { action: 'finance.payment_manual', entityType: 'Payment', entityId: p.id, after: { charge: charge.id, amount: b.amount, method: b.method, posted: ctx().role === 'CHAIRMAN' } })
       return p.id
     })
     return this.detail(id)
@@ -206,6 +208,7 @@ export class PaymentsService {
     let occurred = paidDay < dateStr(account.openedOn) || paidDay > almatyToday() ? almatyToday() : paidDay
     // Месяц уже подписан — деньги ложатся в текущий: подписанный отчёт не меняется задним числом
     if (await isPeriodClosed(tx, periodOf(occurred))) occurred = almatyToday()
+    await assertPeriodOpen(tx, periodOf(occurred))
 
     const seq = await tx.$queryRaw<{ transaction_seq: number }[]>`
       UPDATE houses SET transaction_seq = transaction_seq + 1 WHERE id = ${charge.houseId}::uuid RETURNING transaction_seq`
@@ -283,7 +286,8 @@ export class PaymentsService {
       id: r.id, status: r.status, method: r.method, amount: num(r.amount), confirmed_amount: r.confirmedAmount ? num(r.confirmedAmount) : null,
       paid_at: r.paidAt?.toISOString() ?? null, external_ref: r.externalRef, created_at: r.createdAt.toISOString(),
       confirmed_at: r.confirmedAt?.toISOString() ?? null, rejection_reason: r.rejectionReason,
-      flags: (r.flags as Flag[]) ?? [],
+      // Замечания — для проверяющих: плательщику незачем знать, что такой файл есть в другом доме
+      flags: board ? ((r.flags as Flag[]) ?? []) : [],
       charge: { id: r.charge.id, title: r.charge.title, period: r.charge.period, amount: num(r.charge.amount), paid_amount: num(r.charge.paidAmount) },
       unit: unit.get(r.unitId) ?? { id: r.unitId, number: '' },
       receipt: r.receipt ? { file_id: r.receipt.fileId, recognized: (r.receipt.ocrParsed as ReceiptFields | null) ?? null } : null,

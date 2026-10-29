@@ -128,6 +128,8 @@ describe('monthly report', () => {
     expect(late.body.error.code).toBe('PERIOD_CLOSED')
     expect((await s.chair.post(`${s.base}/transactions/${s.liftId}/void`).set('x-step-up-token', s.up).send({ reason: 'Попытка задним числом' })).body.error.code).toBe('PERIOD_CLOSED')
     expect((await generate(s)).body.error.code).toBe('REPORT_STATE')
+    // Начисления закрытого месяца тоже не меняются
+    expect((await s.chair.post(`${s.base}/charges/generate`).set('x-step-up-token', s.up).send({ period: P() })).body.error.code).toBe('PERIOD_CLOSED')
 
     expect((await s.chair.post(`${s.base}/reports/${id}/publish`).set('x-step-up-token', s.up)).status).toBe(409)
     const accSigned = await sign(s.acc, s.accUp, s.base, id, s.accountant)
@@ -143,6 +145,17 @@ describe('monthly report', () => {
     expect(seen.body).toMatchObject({ status: 'PUBLISHED', issues: [], signatures: { chairman: { name: s.chairman.fullName }, accountant: { name: s.accountant.fullName } } })
     expect((await s.resident.get(`${s.base}/reports`)).body).toHaveLength(1)
     expect(await owner.notification.count({ where: { userId: s.residentId, category: 'REPORTS' } })).toBe(1)
+  })
+
+  it('signing picks up operations posted after the draft was generated', async () => {
+    const s = await setup(false)
+    const id = (await generate(s)).body.id
+    await s.chair.post(`${s.base}/transactions`).set('x-step-up-token', s.up)
+      .send({ idempotency_key: 'report-after-draft', account_id: s.current, category_code: '7.4', amount: 2500, occurred_on: today(), description: 'Электроэнергия МОП', confirm: true })
+      .expect(201)
+    const done = await sign(s.chair, s.up, s.base, id, s.chairman)
+    expect(done.body.status).toBe('SIGNED')
+    expect(done.body.rows.find((r: { code: string }) => r.code === '7.4').amount).toBe(2500)
   })
 
   it('without an accountant the chairman signs alone; signing needs a verified identity', async () => {

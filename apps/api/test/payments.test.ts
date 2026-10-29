@@ -85,6 +85,11 @@ async function pay(s: S, chargeId: string, file: Promise<string>, extra: Record<
   return s.resident.agent.post(`${s.base}/charges/${chargeId}/payments`).send({ file_id: fileId, ...extra })
 }
 
+/** Замечания видит только правление: плательщику они не показываются */
+async function flagsOf(s: S, id: string): Promise<string[]> {
+  return ((await s.chair.get(`${s.base}/payments/${id}`)).body.flags as { code: string }[]).map((f) => f.code)
+}
+
 const settings = (s: S) => s.chair.put(`${s.base}/payment-settings`).set('x-step-up-token', s.up).send({ pay_url: 'https://pay.kaspi.kz/pay/abc123', recipient_name: RECIPIENT })
 const balance = async (s: S, type: string) => ((await s.chair.get(`${s.base}/accounts`)).body as { type: string; balance: number }[]).find((a) => a.type === type)!.balance
 
@@ -115,6 +120,7 @@ describe('receipt payments', () => {
     const file = await upload(s.resident.agent, s.house.id, kaspiPdf('6 000', 'QR8800123456'), 'application/pdf')
     const sent = await s.resident.agent.post(`${s.base}/charges/${s.maintenance.id}/payments`).send({ file_id: file })
     expect(sent.status).toBe(201)
+    expect(await flagsOf(s, sent.body.id)).toEqual([])
     expect(sent.body).toMatchObject({ status: 'PENDING_REVIEW', amount: 6000, external_ref: 'QR8800123456', flags: [], receipt: { recognized: { amount: 6000, ref: 'QR8800123456' } } })
     expect(sent.body.paid_by).toBeUndefined()
 
@@ -130,11 +136,13 @@ describe('receipt payments', () => {
     const queue = await s.acc.get(`${s.base}/payments`)
     expect(queue.body).toEqual([expect.objectContaining({ id: sent.body.id, paid_by: { id: s.resident.id, name: 'Асанова Айгерим' }, unit: { id: s.units[0]!.id, number: s.units[0]!.number } })])
 
-    expect((await s.acc.post(`${s.base}/payments/${sent.body.id}/confirm`).send({})).status).toBe(428)
-    const ok = await s.acc.post(`${s.base}/payments/${sent.body.id}/confirm`).set('x-step-up-token', s.accUp).send({})
+    expect((await s.chair.post(`${s.base}/payments/${sent.body.id}/confirm`).send({})).status).toBe(428)
+    // Деньги зачитывает председатель; бухгалтер видит очередь, но не проводит
+    expect((await s.acc.post(`${s.base}/payments/${sent.body.id}/confirm`).set('x-step-up-token', s.accUp).send({})).status).toBe(403)
+    const ok = await s.chair.post(`${s.base}/payments/${sent.body.id}/confirm`).set('x-step-up-token', s.up).send({})
     expect(ok.status).toBe(200)
     expect(ok.body).toMatchObject({ status: 'CONFIRMED', confirmed_amount: 6000, charge: { paid_amount: 6000 } })
-    expect((await s.acc.post(`${s.base}/payments/${sent.body.id}/confirm`).set('x-step-up-token', s.accUp).send({})).status).toBe(409)
+    expect((await s.chair.post(`${s.base}/payments/${sent.body.id}/confirm`).set('x-step-up-token', s.up).send({})).status).toBe(409)
 
     // Начисление закрыто, деньги в журнале по строке 6.1 на текущем счёте — без номера квартиры и имени
     const mine = (await s.resident.agent.get(`${s.base}/my-charges`)).body
@@ -152,7 +160,7 @@ describe('receipt payments', () => {
     const s = await setup()
     await settings(s)
     const part = await pay(s, s.capital.id, upload(s.resident.agent, s.house.id, kaspiPdf('1 500', 'QR1000000001'), 'application/pdf'))
-    expect(part.body.flags.map((f: { code: string }) => f.code)).toEqual(['AMOUNT_MISMATCH'])
+    expect((await flagsOf(s, part.body.id))).toEqual(['AMOUNT_MISMATCH'])
     await s.chair.post(`${s.base}/payments/${part.body.id}/confirm`).set('x-step-up-token', s.up).send({ acknowledge_flags: true }).expect(200)
     expect((await s.resident.agent.get(`${s.base}/my-charges`)).body.charges.find((c: { id: string }) => c.id === s.capital.id)).toMatchObject({ status: 'PARTIALLY_PAID', paid_amount: 1500 })
     expect(await balance(s, 'SAVINGS')).toBe(101500)
@@ -176,7 +184,7 @@ describe('forgery protection', () => {
 
     const again = await pay(s, s.capital.id, upload(s.resident.agent, s.house.id, pdf, 'application/pdf'))
     expect(again.body.status).toBe('FLAGGED')
-    expect(again.body.flags.map((f: { code: string }) => f.code).sort()).toEqual(['AMOUNT_MISMATCH', 'DUPLICATE_FILE', 'DUPLICATE_REF'])
+    expect((await flagsOf(s, again.body.id)).sort()).toEqual(['AMOUNT_MISMATCH', 'DUPLICATE_FILE', 'DUPLICATE_REF'])
 
     const blind = await s.chair.post(`${s.base}/payments/${again.body.id}/confirm`).set('x-step-up-token', s.up).send({})
     expect(blind.status).toBe(409)
@@ -200,12 +208,12 @@ describe('forgery protection', () => {
 
     const first = await submit(await receiptPhoto(7), 'REF-0001')
     // Фото не распознано (заглушка читает только PDF): сумму ввёл жилец — это видно председателю
-    expect(first.body.flags.map((f: { code: string }) => f.code)).toEqual(['NOT_RECOGNIZED'])
+    expect((await flagsOf(s, first.body.id))).toEqual(['NOT_RECOGNIZED'])
 
     const resaved = await submit(await receiptPhoto(7, 300, 60), 'REF-0002', s.capital.id)
-    expect(resaved.body.flags.map((f: { code: string }) => f.code)).toContain('SIMILAR_IMAGE')
+    expect((await flagsOf(s, resaved.body.id))).toContain('SIMILAR_IMAGE')
     const other = await submit(await receiptPhoto(99), 'REF-0003', s.capital.id)
-    expect(other.body.flags.map((f: { code: string }) => f.code)).not.toContain('SIMILAR_IMAGE')
+    expect((await flagsOf(s, other.body.id))).not.toContain('SIMILAR_IMAGE')
   })
 
   it('an unreadable photo without a typed amount asks for the amount instead of guessing', async () => {
@@ -220,17 +228,21 @@ describe('forgery protection', () => {
     const s = await setup()
     await settings(s)
     const res = await pay(s, s.maintenance.id, upload(s.resident.agent, s.house.id, kaspiPdf('6 000', 'QR5500000001', 'ИП Мошенников'), 'application/pdf'))
-    expect(res.body.flags.map((f: { code: string }) => f.code)).toEqual(['RECIPIENT_MISMATCH'])
+    expect((await flagsOf(s, res.body.id))).toEqual(['RECIPIENT_MISMATCH'])
   })
 })
 
 describe('board-entered payments and expense receipts', () => {
-  it('cash or bank transfer is entered by the board and confirmed at once', async () => {
+  it('cash or bank transfer: the accountant records it, the chairman posts it', async () => {
     const s = await setup()
     const cash = await s.acc.post(`${s.base}/payments`).set('x-step-up-token', s.accUp)
       .send({ charge_id: s.maintenance.id, amount: 6000, method: 'CASH', paid_on: new Date(Date.now() + 5 * 3600_000).toISOString().slice(0, 10) })
     expect(cash.status).toBe(201)
-    expect(cash.body).toMatchObject({ status: 'CONFIRMED', method: 'CASH', confirmed_amount: 6000 })
+    // Запись бухгалтера ждёт председателя: до подтверждения денег в журнале нет
+    expect(cash.body).toMatchObject({ status: 'PENDING_REVIEW', method: 'CASH' })
+    expect(await balance(s, 'CURRENT')).toBe(100000)
+    const ok = await s.chair.post(`${s.base}/payments/${cash.body.id}/confirm`).set('x-step-up-token', s.up).send({})
+    expect(ok.body).toMatchObject({ status: 'CONFIRMED', confirmed_amount: 6000 })
     expect(await balance(s, 'CURRENT')).toBe(106000)
     expect((await s.resident.agent.post(`${s.base}/payments`).send({ charge_id: s.maintenance.id, amount: 1, method: 'CASH', paid_on: '2026-10-01' })).status).toBe(403)
   })

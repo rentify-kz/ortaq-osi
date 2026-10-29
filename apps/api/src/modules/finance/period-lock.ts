@@ -5,8 +5,11 @@ import { monthName } from './charges.service'
 
 /** Месяц закрыт, если отчёт за него подписан хотя бы одной подписью: подписанные цифры не меняются */
 export async function isPeriodClosed(tx: Tx, period: string): Promise<boolean> {
-  const r = await tx.report.findFirst({ where: { type: 'MONTHLY', period }, select: { status: true, chairmanSignatureId: true, accountantSignatureId: true } })
-  return !!r && (r.status !== 'DRAFT' || !!r.chairmanSignatureId || !!r.accountantSignatureId)
+  // FOR SHARE: запись в месяц и первая подпись (FOR UPDATE той же строки) не проскакивают одновременно
+  const rows = await tx.$queryRaw<{ status: string; chairman_signature_id: string | null; accountant_signature_id: string | null }[]>`
+    SELECT status, chairman_signature_id, accountant_signature_id FROM reports WHERE type = 'MONTHLY' AND period = ${period} FOR SHARE`
+  const r = rows[0]
+  return !!r && (r.status !== 'DRAFT' || !!r.chairman_signature_id || !!r.accountant_signature_id)
 }
 
 export async function assertPeriodOpen(tx: Tx, period: string): Promise<void> {

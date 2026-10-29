@@ -61,7 +61,8 @@ export class PaymentsController {
     return this.payments.manual(body)
   }
 
-  @HouseScope('CHAIRMAN', 'ACCOUNTANT') @StepUp() @Post('payments/:paymentId/confirm') @HttpCode(200)
+  /** Зачёт денег — председатель: бухгалтер готовит, председатель проводит (как с операциями) */
+  @HouseScope('CHAIRMAN') @StepUp() @Post('payments/:paymentId/confirm') @HttpCode(200)
   confirm(@Param('paymentId', ParseUUIDPipe) id: string, @Body(new ZodPipe(confirmPaymentBody)) body: ConfirmPaymentBody) {
     return this.payments.confirm(id, body)
   }

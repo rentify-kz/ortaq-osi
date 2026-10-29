@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service'
 import { FilesService } from '../files/files.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { almatyToday, dateStr, dec, num, periodOf, toDate } from './finance.util'
+import { assertPeriodOpen } from './period-lock'
 
 const TITLE: Record<ChargeType, string> = {
   MAINTENANCE: 'Взнос на управление и содержание', CAPITAL_REPAIR: 'Взнос на капремонт', PARKING: 'Содержание парковочного места, кладовки',
@@ -102,6 +103,7 @@ export class ChargesService {
   async run(period: string, actorId: string | null): Promise<ChargeRunView & { created: number }> {
     const houseId = ctx().houseId ?? ''
     const created = await this.db.run(async (tx) => {
+      await assertPeriodOpen(tx, period)
       const tariffs = await tx.tariff.findMany({ where: { effectiveFrom: { lte: period }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: period } }] } })
       if (tariffs.length === 0) throw unprocessable(ErrorCode.VALIDATION, 'Сначала задайте тарифы: без них начислять нечего')
       const units = await tx.unit.findMany()
@@ -159,6 +161,7 @@ export class ChargesService {
     const b = collectionBody.parse(input)
     const { userId = '', houseId = '' } = ctx()
     const result = await this.db.run(async (tx) => {
+      await assertPeriodOpen(tx, b.period)
       const c = await tx.chargeCollection.create({
         data: {
           houseId, type: b.type, title: b.title, basis: b.basis, rate: dec(b.rate), unitTypes: b.unit_types, period: b.period,
@@ -255,6 +258,7 @@ export class ChargesService {
     const c = await tx.charge.findFirst({ where: { id } })
     if (!c) throw notFound('Начисление')
     if (c.status === 'CANCELLED') throw conflict(ErrorCode.CONFLICT, 'Начисление уже отменено')
+    await assertPeriodOpen(tx, c.period)
     if (c.paidAmount.gt(0)) throw conflict(ErrorCode.CONFLICT, 'По начислению уже есть оплата: исправьте через возврат или новое начисление')
     return c
   }

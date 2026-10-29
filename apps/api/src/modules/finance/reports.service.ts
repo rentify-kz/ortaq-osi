@@ -65,17 +65,13 @@ export class ReportsService {
     const houseId = ctx().houseId ?? ''
     const categories = await this.categories.all()
     return this.db.run(async (tx) => {
+      // Блокировка строки отчёта: пересборка и подписание одной и той же версии идут по очереди
+      await tx.$queryRaw`SELECT id FROM reports WHERE type = 'MONTHLY' AND period = ${period} FOR UPDATE`
       const existing = await tx.report.findFirst({ where: { type: 'MONTHLY', period } })
       if (existing && (existing.status !== 'DRAFT' || existing.chairmanSignatureId || existing.accountantSignatureId)) {
         throw state('Отчёт уже подписан: пересобрать его нельзя')
       }
-      const template = await tx.reportTemplate.findFirst({
-        where: { formCode: 'MONTHLY_CONDOMINIUM', effectiveFrom: { lte: dueDateOf(period) }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: dueDateOf(period) } }] },
-        orderBy: { effectiveFrom: 'desc' },
-      })
-      if (!template) throw state('Нет действующей формы отчёта для этого месяца')
-      const built = await buildReport(tx, houseId, period, template.schema as TemplateSchema, categories)
-      const dataHash = createHash('sha256').update(canonical({ house: houseId, period, form: template.version, ...built.data })).digest()
+      const { template, built, dataHash } = await this.compose(tx, houseId, period, categories)
       const fields = {
         templateId: template.id, data: built.data, issues: built.issues, workSummary: built.work, dataHash,
         generatedAt: new Date(), generatedBy: actorId, pendingSigning: {}, dueDate: reportDueDate(period),
@@ -89,6 +85,18 @@ export class ReportsService {
       })
       return report.id
     })
+  }
+
+  /** Форма, заполненная из журнала, и хеш содержимого — включая фотоотчёт: подпись покрывает всё, что видит жилец */
+  private async compose(tx: Tx, houseId: string, period: string, categories: Awaited<ReturnType<CategoriesService['all']>>) {
+    const template = await tx.reportTemplate.findFirst({
+      where: { formCode: 'MONTHLY_CONDOMINIUM', effectiveFrom: { lte: dueDateOf(period) }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: dueDateOf(period) } }] },
+      orderBy: { effectiveFrom: 'desc' },
+    })
+    if (!template) throw state('Нет действующей формы отчёта для этого месяца')
+    const built = await buildReport(tx, houseId, period, template.schema as TemplateSchema, categories)
+    const dataHash = createHash('sha256').update(canonical({ house: houseId, period, form: template.version, ...built.data, work: built.work })).digest()
+    return { template, built, dataHash }
   }
 
   async list(): Promise<ReportListItem[]> {
@@ -127,9 +135,18 @@ export class ReportsService {
   async startSigning(id: string): Promise<SigningStartView> {
     const role = this.signRole()
     const userId = ctx().userId ?? ''
-    const r = await this.db.run((tx) => tx.report.findFirst({ where: { id } }))
+    let r = await this.db.run((tx) => tx.report.findFirst({ where: { id } }))
     if (!r) throw notFound('Отчёт')
     if (r.status !== 'DRAFT') throw state('Отчёт уже подписан')
+    // Подписывается актуальное: если журнал изменился после 15-го, неподписанный черновик пересобирается
+    if (!r.chairmanSignatureId && !r.accountantSignatureId) {
+      const categories = await this.categories.all()
+      const fresh = await this.db.run((tx) => this.compose(tx, r!.houseId, r!.period, categories))
+      if (!Buffer.from(fresh.dataHash).equals(Buffer.from(r.dataHash))) {
+        await this.run(r.period, userId)
+        r = await this.db.run((tx) => tx.report.findFirstOrThrow({ where: { id } }))
+      }
+    }
     if (this.signatureOf(r, role)) throw state(role === 'CHAIRMAN' ? 'Председатель уже подписал отчёт' : 'Бухгалтер уже подписал отчёт')
     const user = await this.db.run((tx) => tx.user.findUniqueOrThrow({ where: { id: userId }, select: { iinHash: true } }))
     if (!user.iinHash) throw new AppError(422, ErrorCode.IDENTITY_REQUIRED, 'Сначала подтвердите личность через eGov mobile: отчёт подписывается вашей ЭЦП')
@@ -177,6 +194,10 @@ export class ReportsService {
       await tx.$queryRaw`SELECT id FROM reports WHERE id = ${id}::uuid FOR UPDATE`
       const fresh = await tx.report.findFirstOrThrow({ where: { id } })
       if (!Buffer.from(fresh.dataHash).equals(Buffer.from(r.dataHash))) throw state('Отчёт пересобран во время подписания — подпишите новую версию')
+      if (fresh.status !== 'DRAFT' || this.signatureOf(fresh, role)) throw state('Отчёт уже подписан этой ролью')
+      // Журнал мог измениться, пока шло подписание: подпись должна покрывать то, что в нём есть сейчас
+      const current = await this.compose(tx, fresh.houseId, fresh.period, await this.categories.all())
+      if (!Buffer.from(current.dataHash).equals(Buffer.from(r.dataHash))) throw state('Данные месяца изменились во время подписания. Начните подписание заново')
       const next = { ...fresh, [role === 'CHAIRMAN' ? 'chairmanSignatureId' : 'accountantSignatureId']: sig.id }
       const complete = !!next.chairmanSignatureId && (!!next.accountantSignatureId || !needsAccountant)
       const rest: Pending = { ...(fresh.pendingSigning as Pending) }
