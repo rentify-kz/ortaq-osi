@@ -50,7 +50,7 @@ function refresh(): Promise<boolean> {
   return refreshing
 }
 
-type Options = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown }
+type Options = { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown }
 
 export async function api<T>(path: string, options: Options = {}, attempt = { refreshed: false, steppedUp: false }): Promise<T> {
   const { method = 'GET', body } = options

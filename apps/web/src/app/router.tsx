@@ -16,6 +16,10 @@ import { Requests } from '../chairman/Requests'
 import { RequestDetail } from '../chairman/RequestDetail'
 import { Tasks } from '../chairman/Tasks'
 import { Finance } from '../chairman/Finance'
+import { ChargesPage } from '../chairman/finance/ChargesPage'
+import { DebtorsPage } from '../chairman/finance/DebtorsPage'
+import { PaymentsPage } from '../chairman/finance/PaymentsPage'
+import { ReportDetail, ReportsPage } from '../chairman/finance/ReportsPage'
 import { DevEgov } from '../auth/DevEgov'
 import { AdminRoute, HomeRedirect, HouseRoute, NoAccess, Root } from './routes'
 
@@ -55,6 +59,11 @@ export const router = createBrowserRouter([
           { path: 'requests/:requestId', element: <RequestDetail /> },
           { path: 'tasks', element: <Tasks /> },
           { path: 'finance', element: <Finance /> },
+          { path: 'finance/charges', element: <ChargesPage /> },
+          { path: 'finance/payments', element: <PaymentsPage /> },
+          { path: 'finance/debtors', element: <DebtorsPage /> },
+          { path: 'finance/reports', element: <ReportsPage /> },
+          { path: 'finance/reports/:reportId', element: <ReportDetail /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

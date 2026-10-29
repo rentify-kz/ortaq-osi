@@ -10,16 +10,8 @@ import { Btn, Card, CardHead, Empty, ErrorNote, PageHead, Select, Skeleton } fro
 import { AccountsSetup } from './finance/AccountsSetup'
 import { EntryForm } from './finance/EntryForm'
 import { TxRow } from './finance/TxRow'
-import { ACCOUNT_TYPE, money } from './labels'
-
-const monthFmt = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-const monthLabel = (p: string) => { const s = monthFmt.format(new Date(`${p}-01T00:00:00Z`)).replace(' г.', ''); return s[0]!.toUpperCase() + s.slice(1) }
-
-/** Последние 12 отчётных месяцев, от текущего по Алматы */
-function months(): string[] {
-  const now = new Date(Date.now() + 5 * 3600_000)
-  return Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)).toISOString().slice(0, 7))
-}
+import { ACCOUNT_TYPE, money, monthLabel, recentMonths } from './labels'
+import { FinanceTabs } from './finance/FinanceTabs'
 
 /**
  * Финансы председателя и бухгалтера (docs/06 §6.3, docs/10). Каждая операция — строка
@@ -29,7 +21,7 @@ export function Finance() {
   const { houseId = '' } = useParams()
   const me = useMe()
   const role = me.data?.memberships.find((m) => m.house_id === houseId)?.role === 'CHAIRMAN' ? 'CHAIRMAN' : 'ACCOUNTANT'
-  const [period, setPeriod] = useState(() => months()[0]!)
+  const [period, setPeriod] = useState(() => recentMonths()[0]!)
   const [adding, setAdding] = useState(false)
 
   const accounts = useQuery({ queryKey: ['house', houseId, 'accounts'], queryFn: () => api<AccountView[]>(`/houses/${houseId}/accounts`) })
@@ -48,6 +40,7 @@ export function Finance() {
     <div className="flex flex-col gap-5">
       <PageHead title="Финансы" sub="Журнал операций по строкам официальной формы отчёта"
         actions={hasAccounts && categories.data && !adding ? <Btn icon={Plus} onClick={() => setAdding(true)}>Внести операцию</Btn> : undefined} />
+      <FinanceTabs />
 
       {accounts.isPending ? <Skeleton rows={2} /> : role === 'CHAIRMAN' ? <AccountsSetup houseId={houseId} existing={accounts.data ?? []} /> : null}
       {!accounts.isPending && !hasAccounts && role === 'ACCOUNTANT' && (
@@ -82,7 +75,7 @@ export function Finance() {
       {hasAccounts && (
         <Card>
           <CardHead title="Журнал" sub={`Проведено ${posted.length}: поступления ${money(income)}, расходы ${money(expense)}${incomplete ? ` · без документов ${incomplete}` : ''}`}
-            aside={<span className="w-48"><Select value={period} onChange={setPeriod} options={months().map((p) => ({ v: p, label: monthLabel(p) }))} /></span>} />
+            aside={<span className="w-48"><Select value={period} onChange={setPeriod} options={recentMonths().map((p) => ({ v: p, label: monthLabel(p) }))} /></span>} />
           <ErrorNote>{journal.error?.message}</ErrorNote>
           {journal.isPending ? <Skeleton rows={4} /> : list.length === 0 ? (
             <Empty icon={ReceiptText} title="Операций за месяц нет" text="Внесите поступления и расходы — каждая сразу ляжет в свою строку отчёта." />
